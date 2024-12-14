@@ -1,0 +1,17 @@
+{
+  "HTTP": {
+    "URL": "http://0.0.0.0:8080"
+  },
+  "MQTT": {
+    "URL": "mqtt://0.0.0.0:1883"
+  },
+  "MQTTs": {
+    "URL": "mqtts://0.0.0.0:8883",
+    "CertFile": "./cmd/mqtt-server/cert/mqtt.pem",
+    "KeyFile": "./cmd/mqtt-server/cert/mqtt.key"
+  },
+  "Websocket": {
+    "URL": "ws://0.0.0.0:8083"
+  }
+}
+

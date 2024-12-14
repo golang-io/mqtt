@@ -1,0 +1,17 @@
+[Unit]
+Description=mqtt-server service
+After=network.target
+
+[Service]
+WorkingDirectory=/data/codes/src/gitee.com/iot-mesh/iot-server/
+Type=simple
+ExecStart=/data/codes/src/gitee.com/iot-mesh/iot-server/mqtt-server
+ExecStop=/bin/kill -s SIGKILL $MAINPID
+KillSignal=SIGUSR1
+
+TimeoutSec=0
+RestartSec=2
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

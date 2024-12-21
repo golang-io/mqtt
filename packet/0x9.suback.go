@@ -25,7 +25,8 @@ func (pkt *SUBACK) Kind() byte {
 }
 
 func (pkt *SUBACK) Pack(w io.Writer) error {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 	if len(pkt.ReasonCode) == 0 {
 		return ErrMalformedReasonCode
 	}

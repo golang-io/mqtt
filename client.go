@@ -4,43 +4,38 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"github.com/golang-io/mqtt/packet"
+	"golang.org/x/sync/errgroup"
 	"log"
 	"net"
 	"net/url"
 	"time"
 )
 
-// A Client is an MQTT client. Its zero value ([DefaultClient]) is a
-// usable client that uses [DefaultTransport].
+// A Client is an MQTT client. Its zero value ([DefaultClient]) is a usable client that uses [DefaultTransport].
 //
 // The [Client.Transport] typically has internal state (cached TCP
-// connections), so Clients should be reused instead of created as
-// needed. Clients are safe for concurrent use by multiple goroutines.
+// connections), so Clients should be reused instead of created as needed.
+// Clients are safe for concurrent use by multiple goroutines.
 //
 // A Client is higher-level than a [RoundTripper] (such as [Transport])
-// and additionally handles HTTP details such as cookies and
-// redirects.
+// and additionally handles HTTP details such as cookies and redirects.
 type Client struct {
-	// URL specifies either the URI being requested (for server
-	// requests) or the URL to access (for client requests).
+	// URL specifies either the URI being requested (for server requests) or the URL to access (for client requests).
 	//
-	// For server requests, the URL is parsed from the URI
-	// supplied on the Request-Line as stored in RequestURI.  For
-	// most requests, fields other than Path and RawQuery will be
-	// empty. (See RFC 7230, Section 5.3)
+	// For server requests, the URL is parsed from the URI supplied on the Request-Line as stored in RequestURI.
+	// For most requests, fields other than Path and RawQuery will be empty. (See RFC 7230, Section 5.3)
 	//
 	// For client requests, the URL's Host specifies the server to
 	// connect to, while the Request's Host field optionally
-	// specifies the Host header value to send in the MQTT
-	// request.
+	// specifies the Host header value to send in the MQTT request.
 	URL *url.URL
 
 	conn *conn
 
 	// DialContext specifies the dial function for creating unencrypted TCP connections.
-	// If DialContext is nil (and the deprecated Dial below is also nil),
-	// then the transport dials using package net.
+	// If DialContext is nil (and the deprecated Dial below is also nil), then the transport dials using package net.
 	//
 	// DialContext runs concurrently with calls to RoundTrip.
 	// A RoundTrip call that initiates a dial may end up using
@@ -48,50 +43,43 @@ type Client struct {
 	// becomes idle before the later DialContext completes.
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 
-	// DialTLSContext specifies an optional dial function for creating
-	// TLS connections for non-proxied HTTPS requests.
+	// DialTLSContext specifies an optional dial function for creating TLS connections for non-proxied HTTPS requests.
 	//
-	// If DialTLSContext is nil (and the deprecated DialTLS below is also nil),
-	// DialContext and TLSClientConfig are used.
+	// If DialTLSContext is nil (and the deprecated DialTLS below is also nil), DialContext and TLSClientConfig are used.
 	//
 	// If DialTLSContext is set, the Dial and DialContext hooks are not used for HTTPS
-	// requests and the TLSClientConfig and TLSHandshakeTimeout
-	// are ignored. The returned net.Conn is assumed to already be
-	// past the TLS handshake.
+	// requests and the TLSClientConfig and TLSHandshakeTimeout are ignored.
+	// The returned net.Conn is assumed to already be past the TLS handshake.
 	DialTLSContext func(ctx context.Context, network, addr string) (net.Conn, error)
 
-	// TLSClientConfig specifies the TLS configuration to use with
-	// tls.Client.
+	// TLSClientConfig specifies the TLS configuration to use with tls.Client.
 	// If nil, the default configuration is used.
 	// If non-nil, HTTP/2 support may not be enabled by default.
 	TLSClientConfig *tls.Config
 
-	// TLSHandshakeTimeout specifies the maximum amount of time to
-	// wait for a TLS handshake. Zero means no timeout.
+	// TLSHandshakeTimeout specifies the maximum amount of time to wait for a TLS handshake. Zero means no timeout.
 	TLSHandshakeTimeout time.Duration
 
-	// Timeout specifies a time limit for requests made by this
-	// Client. The timeout includes connection time, any
-	// redirects, and reading the response body. The timer remains
-	// running after Get, Head, Post, or Do return and will
-	// interrupt reading of the Response.Body.
+	// Timeout specifies a time limit for requests made by this Client.
+	// The timeout includes connection time, any redirects, and reading the response body.
+	// The timer remains running after Get, Head, Post, or Do return and will interrupt reading of the Response.Body.
 	//
 	// A Timeout of zero means no timeout.
 	//
-	// The Client cancels requests to the underlying Transport
-	// as if the Request's Context ended.
+	// The Client cancels requests to the underlying Transport as if the Request's Context ended.
 	//
-	// For compatibility, the Client will also use the deprecated
-	// CancelRequest method on Transport if found. New
-	// RoundTripper implementations should use the Request's Context
+	// For compatibility, the Client will also use the deprecated CancelRequest method on Transport if found.
+	// New RoundTripper implementations should use the Request's Context
 	// for cancellation instead of implementing CancelRequest.
 	Timeout time.Duration
 
-	opts    []Option
+	options Options
 	recv    [0xF + 1]chan packet.Packet
 	version byte
 	ctx     context.Context
 	cancel  context.CancelFunc
+
+	onMessage func(*packet.Message)
 }
 
 func (c *Client) ID() string {
@@ -150,10 +138,12 @@ func New(opts ...Option) *Client {
 	options := newOptions(opts...)
 	var err error
 	client := &Client{
+		options: options,
 		conn:    &conn{inFight: newInFight()},
 		recv:    [0xF + 1]chan packet.Packet{},
 		version: packet.VERSION311,
 	}
+
 	for i := 1; i <= 0xF; i++ {
 		client.recv[i] = make(chan packet.Packet, 1)
 	}
@@ -174,29 +164,27 @@ func (c *Client) Close() error {
 	return nil
 }
 
-func (c *Client) handle_recv() {
-	defer c.Close()
+func (c *Client) unpack(ctx context.Context) error {
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		pkt, err := packet.Unpack(c.version, c.conn.rwc)
 		if err != nil {
 			log.Printf("id=%s, mqtt: error unpacking packet: %v", c.conn.ID, err)
-			continue
+			return err
 		}
 		c.recv[pkt.Kind()] <- pkt
 	}
 }
 
-func (c *Client) Connect(ctx context.Context, id string) error {
-	var err error
-	c.ctx, c.cancel = context.WithCancel(ctx)
-	if c.conn.rwc, err = c.dial(ctx, "tcp", c.URL.Host); err != nil {
-		return err
-	}
-	go c.handle_recv()
+func (c *Client) Connect(ctx context.Context) error {
 	connect := packet.CONNECT{FixedHeader: &packet.FixedHeader{
 		Version: c.version,
 		Kind:    CONNECT,
-	}, ClientID: id}
+	}, ClientID: c.options.ClientID}
 	if err := connect.Pack(c.conn.rwc); err != nil {
 		return err
 	}
@@ -221,20 +209,17 @@ func (c *Client) Connect(ctx context.Context, id string) error {
 	return nil
 }
 
-func (c *Client) Subscribe(ctx context.Context, subs []packet.Subscription, fn func(packet.Message) error) error {
-
+func (c *Client) Subscribe(ctx context.Context) error {
 	sub := packet.SUBSCRIBE{
 		FixedHeader:   &packet.FixedHeader{Version: c.version, Kind: SUBSCRIBE, QoS: 1},
 		PacketID:      1,
-		Subscriptions: subs,
+		Subscriptions: c.options.Subscriptions,
 	}
 	if err := sub.Pack(c.conn.rwc); err != nil {
 		return err
 	}
 
 	select {
-	case <-ctx.Done():
-		return ctx.Err()
 	case pkt, ok := <-c.recv[SUBACK]:
 		if !ok {
 			return ctx.Err()
@@ -249,25 +234,56 @@ func (c *Client) Subscribe(ctx context.Context, subs []packet.Subscription, fn f
 			}
 		}
 	}
+	return nil
+}
+
+func (c *Client) ServeMessageLoop(ctx context.Context) error {
 	for {
 		select {
-		case <-c.ctx.Done():
-			return context.Cause(c.ctx)
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
-		if err := c.ReceiveAndServe(ctx, fn); err != nil {
-			log.Printf("mqtt: error handling packet: %v", err)
+		if err := c.ServeMessage(ctx); err != nil {
 			return err
 		}
 	}
 }
 
-func (c *Client) ReceiveAndServe(ctx context.Context, fn func(message packet.Message) error) error {
+func (c *Client) OnMessage(fn func(*packet.Message)) {
+	c.onMessage = fn
+}
+func (c *Client) SubmitMessage(message *packet.Message) error {
+	if c.conn.rwc == nil {
+		return errors.New("mqtt: connect is nil")
+	}
+	pub := packet.PUBLISH{
+		FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBLISH},
+		Message:     message,
+	}
+
+	if pub.QoS == 0 {
+
+	}
+	if pub.QoS == 1 || pub.QoS == 2 {
+		pub.PacketID = c.conn.PacketID + 1
+		c.conn.PacketID = pub.PacketID
+	}
+
+	if err := pub.Pack(c.conn.rwc); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) ServeMessage(ctx context.Context) error {
 	var pub *packet.PUBLISH
 	select {
+	case <-ctx.Done():
+		return ctx.Err()
 	case pkt, ok := <-c.recv[PUBLISH]:
 		if !ok {
-			return ctx.Err()
+			return fmt.Errorf("mqtt: invalid packet received")
 		}
 		pub, ok = pkt.(*packet.PUBLISH)
 		if !ok {
@@ -297,7 +313,7 @@ func (c *Client) ReceiveAndServe(ctx context.Context, fn func(message packet.Mes
 
 	case pkt, ok := <-c.recv[PUBREL]:
 		if !ok {
-			return ctx.Err()
+			return fmt.Errorf("mqtt: invalid packet received")
 		}
 		pubrel, ok := pkt.(*packet.PUBREL)
 		if !ok {
@@ -315,26 +331,40 @@ func (c *Client) ReceiveAndServe(ctx context.Context, fn func(message packet.Mes
 			return err
 		}
 	}
-
-	return fn(pub.Message)
+	go c.onMessage(pub.Message)
+	return nil
 }
 
-func (c *Client) Publish(ctx context.Context, message packet.Message) error {
-	pub := packet.PUBLISH{FixedHeader: &packet.FixedHeader{
-		Version: c.version,
-		Kind:    PUBLISH,
-	}, Message: message}
-
-	if pub.QoS == 0 {
-
-	}
-	if pub.QoS == 1 || pub.QoS == 2 {
-		pub.PacketID = c.conn.PacketID + 1
-		c.conn.PacketID = pub.PacketID
-	}
-
-	if err := pub.Pack(c.conn.rwc); err != nil {
-		return err
+func (c *Client) ConnectAndSubscribe(ctx context.Context) error {
+	var err error
+	for i := 0; i < 10; i++ {
+		if err = c.connectAndSubscribe(ctx); err != nil {
+			log.Printf(err.Error())
+			time.Sleep(2 * time.Second)
+		}
 	}
 	return nil
+}
+
+func (c *Client) connectAndSubscribe(ctx context.Context) error {
+	var err error
+	if c.conn.rwc, err = c.dial(ctx, "tcp", c.URL.Host); err != nil {
+		return err
+	}
+	group, ctx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		return c.unpack(ctx)
+	})
+
+	group.Go(func() error {
+		if err := c.Connect(ctx); err != nil {
+			return err
+		}
+		if err := c.Subscribe(ctx); err != nil {
+			return err
+		}
+		return c.ServeMessageLoop(ctx)
+	})
+
+	return group.Wait()
 }

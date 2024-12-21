@@ -37,7 +37,8 @@ func (pkt *CONNACK) String() string {
 }
 
 func (pkt *CONNACK) Pack(w io.Writer) error {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 	buf.WriteByte(pkt.SessionPresent)
 	buf.WriteByte(pkt.ConnectReturnCode.Code)
 	if pkt.Version == VERSION500 {
@@ -282,9 +283,8 @@ type ConnackProps struct {
 }
 
 func (props *ConnackProps) Pack() ([]byte, error) {
-	//buf := GetBuffer()
-	//defer PutBuffer(buf)
-	buf := new(bytes.Buffer)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 	if props.SessionExpiryInterval != 0 {
 		buf.WriteByte(0x11)
 		buf.Write(i4b(props.SessionExpiryInterval))

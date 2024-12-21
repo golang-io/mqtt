@@ -20,7 +20,8 @@ func (pkt *PUBACK) Kind() byte {
 }
 
 func (pkt *PUBACK) Pack(w io.Writer) error {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 	pkt.RemainingLength = 2
 	buf.Write(i2b(pkt.PacketID))
 	if pkt.Version == VERSION500 {
@@ -69,9 +70,9 @@ type PubackProperties struct {
 }
 
 func (props *PubackProperties) Pack() ([]byte, error) {
-	//buf := GetBuffer()
-	//defer PutBuffer(buf)
-	buf := new(bytes.Buffer)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
+
 	if props.ReasonString != "" {
 		buf.WriteByte(0x1F)
 		buf.Write(encodeUTF8(props.ReasonString))

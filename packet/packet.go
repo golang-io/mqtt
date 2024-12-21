@@ -17,7 +17,9 @@ func Unpack(version byte, r io.Reader) (Packet, error) {
 		return &RESERVED{FixedHeader: fixed}, err
 	}
 
-	buf := new(bytes.Buffer)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
+
 	lr := io.LimitReader(r, int64(fixed.RemainingLength))
 
 	if _, err := buf.ReadFrom(lr); err != nil {

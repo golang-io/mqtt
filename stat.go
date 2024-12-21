@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/golang-io/requests"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -30,17 +31,21 @@ var (
 	}
 )
 
+func ServerLog(ctx context.Context, stat *requests.Stat) {
+	b, err := json.Marshal(stat.Request.Body)
+	log.Printf("%s # body=%s, resp=%v, err=%v", stat.Print(), b, stat.Response.Body, err)
+}
+
 func Httpd() error {
 	stat.Register()
 	stat.RefreshUptime()
-	mux := requests.NewServeMux(requests.URL(CONFIG.HTTP.URL))
+	mux := requests.NewServeMux(requests.URL(CONFIG.HTTP.URL), requests.Logf(ServerLog))
 	mux.Route("/metrics", promhttp.Handler())
 	mux.Pprof()
 	s := requests.NewServer(context.Background(), mux, requests.OnStart(func(s *http.Server) {
 		log.Printf("http serve: %s", s.Addr)
 	}))
 	return s.ListenAndServe()
-
 }
 
 func (s *Stat) RefreshUptime() {

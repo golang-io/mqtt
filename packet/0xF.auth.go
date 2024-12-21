@@ -16,9 +16,8 @@ func (pkt *AUTH) Kind() byte {
 }
 
 func (pkt *AUTH) Packet(w io.Writer) error {
-	//buf := GetBuffer()
-	//defer PutBuffer(buf)
-	buf := new(bytes.Buffer)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 
 	buf.WriteByte(pkt.AuthenticationReasonCode.Code)
 	if pkt.Version == VERSION500 {

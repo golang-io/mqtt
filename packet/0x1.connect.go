@@ -70,9 +70,9 @@ func (pkt *CONNECT) String() string {
 }
 
 func (pkt *CONNECT) Pack(w io.Writer) error {
-	//buf := GetBuffer()
-	//defer PutBuffer(buf)
-	buf := new(bytes.Buffer)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
+
 	buf.Write(NAME)
 	buf.WriteByte(pkt.Version)
 
@@ -337,9 +337,9 @@ type ConnectProperties struct {
 }
 
 func (props *ConnectProperties) Pack() ([]byte, error) {
-	//buf := GetBuffer()
-	//defer PutBuffer(buf)
-	buf := new(bytes.Buffer)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
+
 	if props.SessionExpiryInterval != 0 {
 		buf.WriteByte(0x11)
 		buf.Write(i4b(props.SessionExpiryInterval))
@@ -532,9 +532,8 @@ type WillProperties struct {
 }
 
 func (props *WillProperties) Pack() ([]byte, error) {
-	//buf := GetBuffer()
-	//defer PutBuffer(buf)
-	buf := new(bytes.Buffer)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 
 	if props.PayloadFormatIndicator != 0 {
 		buf.WriteByte(0x01)

@@ -18,7 +18,8 @@ func (pkt *PUBREC) Kind() byte {
 }
 
 func (pkt *PUBREC) Pack(w io.Writer) error {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 
 	buf.Write(i2b(pkt.PacketID))
 	if pkt.Version == VERSION500 {

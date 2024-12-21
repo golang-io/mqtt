@@ -20,7 +20,8 @@ func (pkt *DISCONNECT) Kind() byte {
 }
 
 func (pkt *DISCONNECT) Pack(w io.Writer) error {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 
 	buf.WriteByte(pkt.DisconnectReasonCode.Code)
 	if pkt.Version == VERSION500 {

@@ -18,7 +18,8 @@ func (pkt *PUBCOMP) Kind() byte {
 }
 
 func (pkt *PUBCOMP) Pack(w io.Writer) error {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 	buf.Write(i2b(pkt.PacketID))
 	if pkt.Version == VERSION500 {
 		buf.WriteByte(pkt.ReasonCode.Code)

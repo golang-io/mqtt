@@ -11,7 +11,7 @@ import (
 type PUBLISH struct {
 	*FixedHeader `json:"FixedHeader,omitempty"`
 	PacketID     uint16             `json:"PacketID,omitempty"` // 报文标识符
-	Message      Message            `json:"message,omitempty"`
+	Message      *Message           `json:"message,omitempty"`
 	Props        *PublishProperties `json:"properties,omitempty"`
 }
 
@@ -20,7 +20,8 @@ func (pkt *PUBLISH) Kind() byte {
 }
 
 func (pkt *PUBLISH) Pack(w io.Writer) error {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 	buf.Write(s2b(pkt.Message.TopicName))
 	// QoS 设置为 0 的 Publish 报文不能包含报文标识符 [MQTT-2.3.1-5]。
 	if pkt.QoS != 0 {
@@ -49,16 +50,15 @@ func (pkt *PUBLISH) Pack(w io.Writer) error {
 		return err
 	}
 
-	if n, err := buf.WriteTo(w); err != nil || n != int64(buf.Len()) {
-		return fmt.Errorf("error writing to buffer: err=%w, n=%d", err, n)
-	}
-
-	return nil
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 func (pkt *PUBLISH) Unpack(buf *bytes.Buffer) error {
 	topicLength := int(binary.BigEndian.Uint16(buf.Next(2))) // topic length
-
+	if pkt.Message == nil {
+		pkt.Message = &Message{}
+	}
 	pkt.Message.TopicName = string(buf.Next(topicLength))
 
 	// Publish 报文中的主题名不能包含通配符 [MQTT-3.3.2-2]。
@@ -90,7 +90,7 @@ type Message struct {
 }
 
 func (m *Message) String() string {
-	return fmt.Sprintf("%s@%s", m.TopicName, m.Content)
+	return fmt.Sprintf("%s # %s", m.TopicName, m.Content)
 }
 
 type PublishProperties struct {
@@ -148,7 +148,8 @@ func (props *PublishProperties) Unpack(b *bytes.Buffer) error {
 }
 
 func (props *PublishProperties) Pack() ([]byte, error) {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 	if props.PayloadFormatIndicator != 0 {
 		buf.WriteByte(0x01)
 		buf.WriteByte(props.PayloadFormatIndicator)

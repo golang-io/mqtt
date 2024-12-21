@@ -19,7 +19,8 @@ func (pkt *UNSUBSCRIBE) Kind() byte {
 }
 
 func (pkt *UNSUBSCRIBE) Pack(w io.Writer) error {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 	buf.Write(i2b(pkt.PacketID))
 	for _, subscription := range pkt.Subscriptions {
 		buf.Write(s2b(subscription.TopicFilter))

@@ -3,6 +3,7 @@ package mqtt
 import (
 	"fmt"
 	"github.com/golang-io/mqtt/packet"
+	"github.com/golang-io/requests"
 )
 
 type Listen struct {
@@ -33,9 +34,10 @@ var CONFIG = &config{
 }
 
 type Options struct {
-	URL      string // client used
-	ClientID string
-	Version  byte
+	URL           string // client used
+	ClientID      string
+	Version       byte
+	Subscriptions []packet.Subscription
 }
 
 type Option func(*Options)
@@ -43,7 +45,7 @@ type Option func(*Options)
 func newOptions(opts ...Option) Options {
 	options := Options{
 		URL:      "mqtt://127.0.0.1:1883",
-		ClientID: "mqtt-test",
+		ClientID: "mqtt-" + requests.GenId(),
 		Version:  packet.VERSION311,
 	}
 	for _, o := range opts {
@@ -55,6 +57,12 @@ func newOptions(opts ...Option) Options {
 func URL(url string) Option {
 	return func(o *Options) {
 		o.URL = url
+	}
+}
+
+func Subscription(subscription ...packet.Subscription) Option {
+	return func(o *Options) {
+		o.Subscriptions = append(o.Subscriptions, subscription...)
 	}
 }
 

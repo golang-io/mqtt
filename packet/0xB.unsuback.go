@@ -18,7 +18,8 @@ func (pkt *UNSUBACK) Kind() byte {
 }
 
 func (pkt *UNSUBACK) Pack(w io.Writer) error {
-	var buf bytes.Buffer
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 
 	buf.Write(i2b(pkt.PacketID))
 
@@ -74,9 +75,9 @@ type UnsubackProperties struct {
 }
 
 func (props *UnsubackProperties) Pack() ([]byte, error) {
-	//buf := GetBuffer()
-	//defer PutBuffer(buf)
-	buf := new(bytes.Buffer)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
+
 	if props.ReasonString != "" {
 		buf.WriteByte(0x1F)
 		buf.Write(encodeUTF8(props.ReasonString))

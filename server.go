@@ -60,8 +60,6 @@ type response struct {
 }
 
 func (w *response) OnSend(pkt packet.Packet) error {
-	w.conn.mu.Lock()
-	defer w.conn.mu.Unlock()
 	stat.PacketSent.Inc()
 	return pkt.Pack(w.conn)
 }

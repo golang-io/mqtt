@@ -202,10 +202,10 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 	case *packet.PUBLISH:
 		switch rpkt.QoS {
 		case 0:
-			_ = c.server.memorySubscribed.Publish(&rpkt.Message)
+			_ = c.server.memorySubscribed.Publish(rpkt.Message)
 			return
 		case 1:
-			_ = c.server.memorySubscribed.Publish(&rpkt.Message)
+			_ = c.server.memorySubscribed.Publish(rpkt.Message)
 			spkt = &packet.PUBACK{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBACK}, PacketID: rpkt.PacketID}
 		case 2:
 			// client    -----PUBLISH[QoS2]-----> server
@@ -224,7 +224,7 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 		if !ok {
 			panic("inFight not found packetID")
 		}
-		_ = c.server.memorySubscribed.Publish(&pub.Message)
+		_ = c.server.memorySubscribed.Publish(pub.Message)
 		spkt = &packet.PUBCOMP{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBCOMP}, PacketID: rpkt.PacketID}
 	case *packet.PUBCOMP:
 		return

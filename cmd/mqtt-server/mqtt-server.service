@@ -3,9 +3,9 @@ Description=mqtt-server service
 After=network.target
 
 [Service]
-WorkingDirectory=/data/codes/src/gitee.com/iot-mesh/iot-server/
+WorkingDirectory=BASE_PATH
 Type=simple
-ExecStart=/data/codes/src/gitee.com/iot-mesh/iot-server/mqtt-server
+ExecStart=BASE_PATH/mqtt-server -config=config.json
 ExecStop=/bin/kill -s SIGKILL $MAINPID
 KillSignal=SIGUSR1
 

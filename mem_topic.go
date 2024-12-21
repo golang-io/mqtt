@@ -1,9 +1,7 @@
 package mqtt
 
 import (
-	"context"
 	"github.com/golang-io/mqtt/packet"
-	"golang.org/x/sync/errgroup"
 	"log"
 	"strings"
 	"sync"
@@ -138,13 +136,12 @@ func (s *TopicSubscribed) Unsubscribe(c *conn) int {
 func (s *TopicSubscribed) Exchange(message *packet.Message) error {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
-	group, _ := errgroup.WithContext(context.Background())
 	for c := range s.activeConn {
 		response := &response{conn: c}
-		group.Go(func() error {
+		go func() {
 			newPub := &packet.PUBLISH{
 				FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBLISH, Dup: 0, QoS: 0, Retain: 0},
-				Message:     packet.Message{TopicName: message.TopicName, Content: message.Content},
+				Message:     &packet.Message{TopicName: message.TopicName, Content: message.Content},
 			}
 
 			if newPub.QoS > 0 {
@@ -152,8 +149,8 @@ func (s *TopicSubscribed) Exchange(message *packet.Message) error {
 				c.PacketID = newPub.PacketID
 			}
 			//pktLog.Printf("send|%s - %s", Kind[newPub.Kind()], c.ID)
-			return response.OnSend(newPub)
-		})
+			response.OnSend(newPub)
+		}()
 	}
-	return group.Wait()
+	return nil
 }

@@ -13,7 +13,7 @@ const MB = 1024 * KB
 // 2 128 (0x80, 0x01) - 16383 (0xFF, 0x7F)
 // 3 16384 (0x80, 0x80, 0x01) - 2097151 (0xFF, 0xFF, 0x7F)
 // 4 2097152 (0x80, 0x80, 0x80, 0x01) - 268435455 (0xFF, 0xFF, 0xFF, 0x7F)
-const maxRemainLength = 256 * MB // 256MB
+// const maxRemainLength = 256 * MB // 256MB
 
 // Control packet types. Position: byte 1, bits 7-4
 const (

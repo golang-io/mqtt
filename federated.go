@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/golang-io/requests"
 	"log"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/golang-io/requests"
 )
 
 // Endpoint 不提供事务能力，事务需要其他的上层协议来处理
@@ -155,10 +156,8 @@ func Fedstart(ctx context.Context, listen string, join string) error {
 		}
 		body := make(map[string]string)
 		if err := json.Unmarshal(buf.Bytes(), &body); err != nil {
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 		endpoint.mu.Lock()
 		for k, v := range body {
@@ -178,14 +177,11 @@ func Fedstart(ctx context.Context, listen string, join string) error {
 	}))
 	mux.Pprof()
 	go func() {
-		timer := time.NewTimer(0 * time.Second)
-		defer timer.Stop()
-		for {
-			select {
-			case <-timer.C:
-				endpoint.Ping()
-				timer.Reset(3 * time.Second)
-			}
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+		endpoint.Ping() // 立即执行第一次
+		for range ticker.C {
+			endpoint.Ping()
 		}
 	}()
 	endpoint.running = true

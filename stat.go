@@ -3,12 +3,13 @@ package mqtt
 import (
 	"context"
 	"encoding/json"
-	"github.com/golang-io/requests"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/golang-io/requests"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Stat struct {
@@ -51,11 +52,9 @@ func Httpd() error {
 func (s *Stat) RefreshUptime() {
 	go func() {
 		tick := time.NewTicker(time.Second)
-		for {
-			select {
-			case <-tick.C:
-				s.Uptime.Inc()
-			}
+		defer tick.Stop()
+		for range tick.C {
+			s.Uptime.Inc()
 		}
 	}()
 }

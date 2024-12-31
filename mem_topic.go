@@ -1,11 +1,12 @@
 package mqtt
 
 import (
-	"github.com/golang-io/mqtt/packet"
 	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/golang-io/mqtt/packet"
 )
 
 type MemorySubscribed struct {
@@ -67,7 +68,10 @@ func NewMemorySubscribed(s *Server) *MemorySubscribed {
 }
 
 func (m *MemorySubscribed) CleanEmptyTopic() {
-	f := func() {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
 		m.mu.RLock()
 		var empty []string
 		for key, sub := range m.maps {
@@ -76,29 +80,21 @@ func (m *MemorySubscribed) CleanEmptyTopic() {
 			}
 		}
 		m.mu.RUnlock()
+
 		m.mu.Lock()
-		defer m.mu.Unlock()
 		for _, key := range empty {
 			delete(m.maps, key)
 		}
+		m.mu.Unlock()
 	}
-	timer := time.NewTicker(24 * time.Hour)
-	for {
-		select {
-		case <-timer.C:
-			f()
-			log.Printf("clean empty topic")
-		}
-	}
-
 }
 
 // TopicSubscribed 用来存储当前topic有哪些客户端订阅了
 type TopicSubscribed struct {
 	TopicName  string
 	activeConn map[*conn]struct{}
-	share      map[string]map[*conn]struct{} // 共享订阅, group: conn
-	mux        sync.RWMutex
+	// share      map[string]map[*conn]struct{} // 共享订阅, group: conn
+	mux sync.RWMutex
 }
 
 func NewTopicSubscribed(topicName string) *TopicSubscribed {

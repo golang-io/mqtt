@@ -4,9 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"github.com/golang-io/mqtt/packet"
-	"github.com/golang-io/mqtt/topic"
-	"golang.org/x/net/websocket"
 	"log"
 	"math/rand"
 	"net"
@@ -14,6 +11,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/golang-io/mqtt/packet"
+	"github.com/golang-io/mqtt/topic"
+	"golang.org/x/net/websocket"
 )
 
 // shutdownPollIntervalMax is the max polling interval when checking
@@ -157,11 +158,9 @@ func NewServer(ctx context.Context) *Server {
 	s.memorySubscribed = NewMemorySubscribed(s)
 
 	go func() {
-		select {
-		case <-ctx.Done():
-			if err := s.Shutdown(ctx); err != nil {
-				panic(err)
-			}
+		<-ctx.Done()
+		if err := s.Shutdown(ctx); err != nil {
+			panic(err)
 		}
 	}()
 	return s

@@ -5,12 +5,13 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/golang-io/mqtt/packet"
-	"golang.org/x/sync/errgroup"
 	"log"
 	"net"
 	"net/url"
 	"time"
+
+	"github.com/golang-io/mqtt/packet"
+	"golang.org/x/sync/errgroup"
 )
 
 // A Client is an MQTT client. Its zero value ([DefaultClient]) is a usable client that uses [DefaultTransport].
@@ -76,7 +77,6 @@ type Client struct {
 	options Options
 	recv    [0xF + 1]chan packet.Packet
 	version byte
-	ctx     context.Context
 	cancel  context.CancelFunc
 
 	onMessage func(*packet.Message)
@@ -220,6 +220,7 @@ func (c *Client) Subscribe(ctx context.Context) error {
 	}
 
 	select {
+	case <-ctx.Done():
 	case pkt, ok := <-c.recv[SUBACK]:
 		if !ok {
 			return ctx.Err()
@@ -339,7 +340,7 @@ func (c *Client) ConnectAndSubscribe(ctx context.Context) error {
 	var err error
 	for i := 0; i < 10; i++ {
 		if err = c.connectAndSubscribe(ctx); err != nil {
-			log.Printf(err.Error())
+			log.Printf("connection error: %v", err)
 			time.Sleep(2 * time.Second)
 		}
 	}

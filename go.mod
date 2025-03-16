@@ -3,10 +3,10 @@ module github.com/golang-io/mqtt
 go 1.23.0
 
 require (
-	github.com/golang-io/requests v0.0.0-20241116190625-859bf41a0c1e
-	github.com/prometheus/client_golang v1.20.5
-	golang.org/x/net v0.33.0
-	golang.org/x/sync v0.10.0
+	github.com/golang-io/requests v0.0.0-20250316144736-e50415f39889
+	github.com/prometheus/client_golang v1.21.1
+	golang.org/x/net v0.37.0
+	golang.org/x/sync v0.12.0
 )
 
 require (
@@ -15,8 +15,8 @@ require (
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
-	github.com/prometheus/common v0.61.0 // indirect
+	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	google.golang.org/protobuf v1.36.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	google.golang.org/protobuf v1.36.1 // indirect
 )

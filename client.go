@@ -157,7 +157,6 @@ func New(opts ...Option) *Client {
 }
 
 func (c *Client) Close() error {
-	defer c.cancel()
 	for i := 1; i <= 0xF; i++ {
 		close(c.recv[i])
 	}
@@ -337,14 +336,19 @@ func (c *Client) ServeMessage(ctx context.Context) error {
 }
 
 func (c *Client) ConnectAndSubscribe(ctx context.Context) error {
-	var err error
-	for i := 0; i < 10; i++ {
-		if err = c.connectAndSubscribe(ctx); err != nil {
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+			timer.Reset(3 * time.Second)
+		}
+		if err := c.connectAndSubscribe(ctx); err != nil {
 			log.Printf("connection error: %v", err)
-			time.Sleep(2 * time.Second)
 		}
 	}
-	return nil
 }
 
 func (c *Client) connectAndSubscribe(ctx context.Context) error {
@@ -353,6 +357,12 @@ func (c *Client) connectAndSubscribe(ctx context.Context) error {
 		return err
 	}
 	group, ctx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		select {
+		case <-ctx.Done():
+			return c.Close()
+		}
+	})
 	group.Go(func() error {
 		return c.unpack(ctx)
 	})

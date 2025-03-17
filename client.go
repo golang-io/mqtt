@@ -341,12 +341,13 @@ func (c *Client) ConnectAndSubscribe(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			log.Printf("mqtt: context done....\n")
 			return ctx.Err()
 		case <-timer.C:
 			timer.Reset(3 * time.Second)
 		}
 		if err := c.connectAndSubscribe(ctx); err != nil {
-			log.Printf("connection error: %v", err)
+			log.Printf("connect error: %v", err)
 		}
 	}
 }
@@ -356,15 +357,16 @@ func (c *Client) connectAndSubscribe(ctx context.Context) error {
 	if c.conn.rwc, err = c.dial(ctx, "tcp", c.URL.Host); err != nil {
 		return err
 	}
+
 	group, ctx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		return c.unpack(ctx)
+	})
 	group.Go(func() error {
 		select {
 		case <-ctx.Done():
-			return c.Close()
+			return c.Disconnect()
 		}
-	})
-	group.Go(func() error {
-		return c.unpack(ctx)
 	})
 
 	group.Go(func() error {
@@ -378,4 +380,14 @@ func (c *Client) connectAndSubscribe(ctx context.Context) error {
 	})
 
 	return group.Wait()
+}
+
+func (c *Client) Disconnect() error {
+	disconnect := packet.DISCONNECT{
+		FixedHeader: &packet.FixedHeader{Version: c.version, Kind: DISCONNECT},
+	}
+	if err := disconnect.Pack(c.conn.rwc); err != nil {
+		return err
+	}
+	return nil
 }

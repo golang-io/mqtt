@@ -5,8 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/golang-io/mqtt/packet"
-	"github.com/golang-io/mqtt/topic"
 	"io"
 	"log"
 	"net"
@@ -14,6 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/golang-io/mqtt/packet"
+	"github.com/golang-io/mqtt/topic"
 )
 
 // conn represents the server side of an HTTP connection.
@@ -231,8 +232,12 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 	case *packet.SUBSCRIBE:
 		var reasons []packet.ReasonCode
 		for _, subscribe := range rpkt.Subscriptions {
-			c.subscribeTopics.Subscribe(subscribe.TopicFilter)
-			reasons = append(reasons, packet.ReasonCode{Code: subscribe.MaximumQoS})
+			if err := c.subscribeTopics.Subscribe(subscribe.TopicFilter); err != nil {
+				log.Printf("subscribeTopics.Subscribe: err=%v", err)
+				reasons = append(reasons, packet.ErrTopicNameInvalid)
+			} else {
+				reasons = append(reasons, packet.ReasonCode{Code: subscribe.MaximumQoS})
+			}
 		}
 
 		c.server.memorySubscribed.Subscribe(c)

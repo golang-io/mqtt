@@ -3,7 +3,7 @@ module github.com/golang-io/mqtt
 go 1.23.0
 
 require (
-	github.com/golang-io/requests v0.0.0-20250316144736-e50415f39889
+	github.com/golang-io/requests v0.0.0-20250805081902-43753b4e968e
 	github.com/prometheus/client_golang v1.21.1
 	golang.org/x/net v0.37.0
 	golang.org/x/sync v0.12.0

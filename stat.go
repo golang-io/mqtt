@@ -41,7 +41,11 @@ func Httpd() error {
 	stat.Register()
 	stat.RefreshUptime()
 	mux := requests.NewServeMux(requests.URL(CONFIG.HTTP.URL), requests.Logf(ServerLog))
-	mux.Route("/metrics", promhttp.Handler())
+	mux.GET("/_metrics", promhttp.Handler())
+	mux.GET("/_paths", func(w http.ResponseWriter, r *http.Request) {
+		mux.Print()
+		w.Write([]byte("Hello, World!"))
+	})
 	mux.Pprof()
 	s := requests.NewServer(context.Background(), mux, requests.OnStart(func(s *http.Server) {
 		log.Printf("http serve: %s", s.Addr)

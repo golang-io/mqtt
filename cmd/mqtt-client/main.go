@@ -3,24 +3,25 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/golang-io/mqtt"
-	"github.com/golang-io/mqtt/packet"
-	"golang.org/x/sync/errgroup"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/golang-io/mqtt"
+	"github.com/golang-io/mqtt/packet"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c := mqtt.New(mqtt.URL("mqtt://127.0.0.1:1883"), mqtt.Subscription(
-		packet.Subscription{TopicFilter: "+"}, packet.Subscription{TopicFilter: "a/b/c"},
+		packet.Subscription{TopicFilter: "1"}, packet.Subscription{TopicFilter: "a/b/c"},
 	))
 	c.OnMessage(func(msg *packet.Message) {
-		log.Printf("on: %s", msg.String())
+		log.Printf("recv: %s", msg.String())
 	})
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error {

@@ -77,7 +77,7 @@ type Client struct {
 	options Options
 	recv    [0xF + 1]chan packet.Packet
 	version byte
-	cancel  context.CancelFunc
+	// cancel  context.CancelFunc
 
 	onMessage func(*packet.Message)
 }
@@ -363,10 +363,8 @@ func (c *Client) connectAndSubscribe(ctx context.Context) error {
 		return c.unpack(ctx)
 	})
 	group.Go(func() error {
-		select {
-		case <-ctx.Done():
-			return c.Disconnect()
-		}
+		<-ctx.Done()
+		return c.Disconnect()
 	})
 
 	group.Go(func() error {

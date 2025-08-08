@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/golang-io/requests"
 	"io"
+
+	"github.com/golang-io/requests"
 )
 
 var NAME = []byte{0x00, 0x04, 'M', 'Q', 'T', 'T'}
@@ -136,7 +137,7 @@ func (pkt *CONNECT) Pack(w io.Writer) error {
 
 	if wf == 1 {
 		buf.Write(s2b(pkt.WillTopic))
-		buf.Write(s2b[[]byte](pkt.WillPayload))
+		buf.Write(s2b(pkt.WillPayload))
 	}
 	if uf == 1 {
 		buf.Write(s2b(pkt.Username))

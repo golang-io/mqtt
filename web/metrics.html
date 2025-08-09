@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQTT Dashboard - 指标</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard">
+        <!-- 顶部导航栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fas fa-broadcast-tower"></i>
+                    <span>MQTT Dashboard</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <ul>
+                    <li>
+                        <a href="index.html">
+                            <i class="fas fa-chart-line"></i>
+                            <span>概览</span>
+                        </a>
+                    </li>
+                    <li class="active">
+                        <a href="metrics.html">
+                            <i class="fas fa-chart-bar"></i>
+                            <span>指标</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#connections">
+                            <i class="fas fa-plug"></i>
+                            <span>连接</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#topics">
+                            <i class="fas fa-hashtag"></i>
+                            <span>主题</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#messages">
+                            <i class="fas fa-envelope"></i>
+                            <span>消息</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#logs">
+                            <i class="fas fa-file-alt"></i>
+                            <span>日志</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+            
+            <div class="sidebar-actions">
+                <div class="metrics-search-container">
+                    <input type="text" id="metricsSearch" placeholder="搜索指标..." class="metrics-search-input">
+                </div>
+                <button class="btn-refresh" id="metricsRefresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button class="btn-export" id="metricsExport">
+                    <i class="fas fa-download"></i>
+                </button>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="serverless-ad">
+                    <h4>MQTT Serverless</h4>
+                    <button class="btn-learn-more">了解更多</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <div class="content">
+                <!-- 页面标题 -->
+                <div class="page-header">
+                    <h2>EMQX 公共 MQTT 服务器 Dashboard</h2>
+                    <p class="page-subtitle">集群的报文信息、消息统计与流量收发统计</p>
+                </div>
+
+                <!-- 指标表格 -->
+                <div class="metrics-container">
+                    <!-- 连接指标 -->
+                    <div class="metrics-section">
+                        <div class="section-header">
+                            <h3><i class="fas fa-plug"></i> 连接 (Connection)</h3>
+                            <i class="fas fa-chevron-up toggle-icon"></i>
+                        </div>
+                        <div class="metrics-table">
+                            <div class="metric-row">
+                                <span class="metric-name">client.connack</span>
+                                <span class="metric-value" id="client-connack">187,161,966</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.connack 钩子触发次数</span>
+                                <span class="metric-value" id="client-connack-hook">187,161,966</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.connect</span>
+                                <span class="metric-value" id="client-connect">187,162,815</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.connect 钩子触发次数</span>
+                                <span class="metric-value" id="client-connect-hook">187,162,815</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.connected</span>
+                                <span class="metric-value" id="client-connected">163,199,776</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.connected 钩子触发次数</span>
+                                <span class="metric-value" id="client-connected-hook">163,199,776</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.disconnected</span>
+                                <span class="metric-value" id="client-disconnected">161,881,474</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.disconnected 钩子触发次数</span>
+                                <span class="metric-value" id="client-disconnected-hook">161,881,474</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.subscribe</span>
+                                <span class="metric-value" id="client-subscribe">190,905,723</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.subscribe 钩子触发次数</span>
+                                <span class="metric-value" id="client-subscribe-hook">190,905,723</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.unsubscribe</span>
+                                <span class="metric-value" id="client-unsubscribe">9,692,561</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.unsubscribe 钩子触发次数</span>
+                                <span class="metric-value" id="client-unsubscribe-hook">9,692,561</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 会话指标 -->
+                    <div class="metrics-section">
+                        <div class="section-header">
+                            <h3><i class="fas fa-user-clock"></i> 会话 (Session)</h3>
+                            <i class="fas fa-chevron-up toggle-icon"></i>
+                        </div>
+                        <div class="metrics-table">
+                            <div class="metric-row">
+                                <span class="metric-name">session.created</span>
+                                <span class="metric-value" id="session-created">144,593,425</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">session.created 钩子触发次数</span>
+                                <span class="metric-value" id="session-created-hook">144,593,425</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">session.discarded</span>
+                                <span class="metric-value" id="session-discarded">85,491,103</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">session.discarded 钩子触发次数</span>
+                                <span class="metric-value" id="session-discarded-hook">85,491,103</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">session.resumed</span>
+                                <span class="metric-value" id="session-resumed">18,606,430</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">session.resumed 钩子触发次数</span>
+                                <span class="metric-value" id="session-resumed-hook">18,606,430</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">session.takenover</span>
+                                <span class="metric-value" id="session-takenover">18,456,235</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">session.takenover 钩子触发次数</span>
+                                <span class="metric-value" id="session-takenover-hook">18,456,235</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">session.terminated</span>
+                                <span class="metric-value" id="session-terminated">58,346,909</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">session.terminated 钩子触发次数</span>
+                                <span class="metric-value" id="session-terminated-hook">58,346,909</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 认证与权限指标 -->
+                    <div class="metrics-section">
+                        <div class="section-header">
+                            <h3><i class="fas fa-shield-alt"></i> 认证与权限 (Authentication & Authorization)</h3>
+                            <i class="fas fa-chevron-up toggle-icon"></i>
+                        </div>
+                        <div class="metrics-table">
+                            <div class="metric-row">
+                                <span class="metric-name">authorization.allow</span>
+                                <span class="metric-value" id="authorization-allow">4,215,753,365</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">authorization.cache_hit</span>
+                                <span class="metric-value" id="authorization-cache-hit">3,275,075,620</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">authorization.cache_miss</span>
+                                <span class="metric-value" id="authorization-cache-miss">940,739,882</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">authorization.deny</span>
+                                <span class="metric-value" id="authorization-deny">62,134</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">authorization.matched.allow</span>
+                                <span class="metric-value" id="authorization-matched-allow">939,459,301</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">authorization.matched.deny</span>
+                                <span class="metric-value" id="authorization-matched-deny">61,604</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">authorization.nomatch</span>
+                                <span class="metric-value" id="authorization-nomatch">1,218,974</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">authorization.superuser</span>
+                                <span class="metric-value" id="authorization-superuser">0</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.authorize</span>
+                                <span class="metric-value" id="client-authorize">940,739,881</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.authorize 钩子触发次数</span>
+                                <span class="metric-value" id="client-authorize-hook">940,739,881</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.authenticate</span>
+                                <span class="metric-value" id="client-authenticate">186,825,183</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.authenticate 钩子触发次数</span>
+                                <span class="metric-value" id="client-authenticate-hook">186,825,183</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">client.auth.anonymous</span>
+                                <span class="metric-value" id="client-auth-anonymous">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 消息传输指标 -->
+                    <div class="metrics-section">
+                        <div class="section-header">
+                            <h3><i class="fas fa-exchange-alt"></i> 消息传输 (Message Transfer)</h3>
+                            <i class="fas fa-chevron-up toggle-icon"></i>
+                        </div>
+                        <div class="metrics-table">
+                            <div class="metric-row">
+                                <span class="metric-name">bytes.received</span>
+                                <span class="metric-value" id="bytes-received">1,596,593,474</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">已接收字节数</span>
+                                <span class="metric-value" id="bytes-received-alt">274</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 消息数量指标 -->
+                    <div class="metrics-section">
+                        <div class="section-header">
+                            <h3><i class="fas fa-envelope-open"></i> 消息数量 (Message Count)</h3>
+                            <i class="fas fa-chevron-up toggle-icon"></i>
+                        </div>
+                        <div class="metrics-table">
+                            <div class="metric-row">
+                                <span class="metric-name">messages.acked</span>
+                                <span class="metric-value" id="messages-acked">250,620,670</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">已经应答的消息数量</span>
+                                <span class="metric-value" id="messages-acked-alt">250,620,670</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 消息分发指标 -->
+                    <div class="metrics-section">
+                        <div class="section-header">
+                            <h3><i class="fas fa-share-alt"></i> 消息分发 (Message Distribution)</h3>
+                            <i class="fas fa-chevron-up toggle-icon"></i>
+                        </div>
+                        <div class="metrics-table">
+                            <div class="metric-row">
+                                <span class="metric-name">delivery.dropped</span>
+                                <span class="metric-value" id="delivery-dropped">81,805,815</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-name">发送时丢弃的消息总数</span>
+                                <span class="metric-value" id="delivery-dropped-alt">81,805,815</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="metrics.js"></script>
+</body>
+</html>

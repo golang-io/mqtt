@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"github.com/golang-io/mqtt"
-	"golang.org/x/sync/errgroup"
 	"log"
 	"os"
+
+	"github.com/golang-io/mqtt"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	c := flag.String("config", "./config/dev.json", "Path to config file")
 

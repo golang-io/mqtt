@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"sync"
@@ -106,9 +107,7 @@ func (e *Endpoint) List() map[string]string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	var ret = map[string]string{}
-	for id, endpoint := range e.active {
-		ret[id] = endpoint
-	}
+	maps.Copy(ret, e.active)
 	return ret
 }
 
@@ -160,9 +159,7 @@ func Fedstart(ctx context.Context, listen string, join string) error {
 			return
 		}
 		endpoint.mu.Lock()
-		for k, v := range body {
-			endpoint.active[k] = v
-		}
+		maps.Copy(endpoint.active, body)
 		endpoint.mu.Unlock()
 
 		b, err := json.Marshal(endpoint.List())

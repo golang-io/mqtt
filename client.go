@@ -153,10 +153,18 @@ func New(opts ...Option) *Client {
 	if client.URL, err = url.Parse(options.URL); err != nil {
 		panic(err)
 	}
+
+	// 记录客户端创建日志
+	log.Printf("[CLIENT_CREATED] MQTT client created - ClientID: %s, Server: %s",
+		options.ClientID, options.URL)
+
 	return client
 }
 
 func (c *Client) Close() error {
+	// 记录客户端关闭日志
+	log.Printf("[CLIENT_CLOSED] MQTT client closed - ClientID: %s", c.conn.ID)
+
 	for i := 1; i <= 0xF; i++ {
 		close(c.recv[i])
 	}
@@ -172,7 +180,7 @@ func (c *Client) unpack(ctx context.Context) error {
 		}
 		pkt, err := packet.Unpack(c.version, c.conn.rwc)
 		if err != nil {
-			log.Printf("id=%s, mqtt: error unpacking packet: %v", c.conn.ID, err)
+			log.Printf("[UNPACK_ERROR] Client packet unpack error - ClientID: %s, Error: %v", c.conn.ID, err)
 			return err
 		}
 		c.recv[pkt.Kind()] <- pkt
@@ -180,59 +188,80 @@ func (c *Client) unpack(ctx context.Context) error {
 }
 
 func (c *Client) Connect(ctx context.Context) error {
+	// 记录连接尝试日志
+	log.Printf("client attempting to connect: client_id=%s, server=%s", c.options.ClientID, c.URL.Host)
+
 	connect := packet.CONNECT{FixedHeader: &packet.FixedHeader{
 		Version: c.version,
 		Kind:    CONNECT,
 	}, ClientID: c.options.ClientID}
 	if err := connect.Pack(c.conn.rwc); err != nil {
+		log.Printf("client connect packet send failed: client_id=%s, error=%v", c.options.ClientID, err)
 		return err
 	}
 	c.conn.ID = connect.ClientID
 
 	select {
 	case <-ctx.Done():
+		log.Printf("client connect timeout: client_id=%s", c.options.ClientID)
+		return ctx.Err()
 	case pkt, ok := <-c.recv[CONNACK]:
 		if !ok {
 			return ctx.Err()
 		}
 		connack, ok := pkt.(*packet.CONNACK)
 		if !ok || connack.Kind() != CONNACK {
+			log.Printf("client received invalid CONNACK packet: client_id=%s", c.options.ClientID)
 			return errors.New("mqtt: invalid packet received")
 		}
 
 		if connack.ConnectReturnCode.Code != 0 {
+			log.Printf("client connect failed: client_id=%s, return_code=%v", c.options.ClientID, connack.ConnectReturnCode)
 			return errors.New("mqtt: connect returned non-zero return code")
 		}
-		log.Printf("connect ok!")
+		log.Printf("client connected successfully: client_id=%s, server=%s", c.options.ClientID, c.URL.Host)
 	}
 	return nil
 }
 
 func (c *Client) Subscribe(ctx context.Context) error {
+	// 记录订阅尝试日志
+	var topics []string
+	for _, sub := range c.options.Subscriptions {
+		topics = append(topics, sub.TopicFilter)
+	}
+	log.Printf("client attempting to subscribe: client_id=%s, topics=%v", c.options.ClientID, topics)
+
 	sub := packet.SUBSCRIBE{
 		FixedHeader:   &packet.FixedHeader{Version: c.version, Kind: SUBSCRIBE, QoS: 1},
 		PacketID:      1,
 		Subscriptions: c.options.Subscriptions,
 	}
 	if err := sub.Pack(c.conn.rwc); err != nil {
+		log.Printf("client subscribe packet send failed: client_id=%s, error=%v", c.options.ClientID, err)
 		return err
 	}
 
 	select {
 	case <-ctx.Done():
+		log.Printf("client subscribe timeout: client_id=%s", c.options.ClientID)
+		return ctx.Err()
 	case pkt, ok := <-c.recv[SUBACK]:
 		if !ok {
 			return ctx.Err()
 		}
 		suback, ok := pkt.(*packet.SUBACK)
 		if !ok || suback.Kind() != SUBACK {
+			log.Printf("client received invalid SUBACK packet: client_id=%s", c.options.ClientID)
 			return errors.New("mqtt: invalid packet received")
 		}
 		for _, reason := range suback.ReasonCode {
 			if reason.Code != 0 {
+				log.Printf("client subscribe failed: client_id=%s, reason_code=%v", c.options.ClientID, reason)
 				return errors.New("mqtt: connect returned non-zero return code")
 			}
 		}
+		log.Printf("client subscribed successfully: client_id=%s, topics=%v", c.options.ClientID, topics)
 	}
 	return nil
 }
@@ -255,8 +284,12 @@ func (c *Client) OnMessage(fn func(*packet.Message)) {
 }
 func (c *Client) SubmitMessage(message *packet.Message) error {
 	if c.conn.rwc == nil {
+		log.Printf("client publish: client_id=%s, error=connect is nil", c.options.ClientID)
 		return errors.New("mqtt: connect is nil")
 	}
+
+	// 记录发布消息日志
+	log.Printf("client publish: client_id=%s, topic=%s, size=%d", c.options.ClientID, message.TopicName, len(message.Content))
 	pub := packet.PUBLISH{
 		FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBLISH},
 		Message:     message,
@@ -271,8 +304,11 @@ func (c *Client) SubmitMessage(message *packet.Message) error {
 	}
 
 	if err := pub.Pack(c.conn.rwc); err != nil {
+		log.Printf("client publish: client_id=%s, topic=%s, error=%v", c.options.ClientID, message.TopicName, err)
 		return err
 	}
+
+	log.Printf("client publish: client_id=%s, topic=%s, success", c.options.ClientID, message.TopicName)
 	return nil
 }
 
@@ -289,6 +325,10 @@ func (c *Client) ServeMessage(ctx context.Context) error {
 		if !ok {
 			return errors.New("mqtt: invalid packet received")
 		}
+
+		// 记录接收消息日志
+		log.Printf("client received: client_id=%s, topic=%s, qos=%d, size=%d", c.options.ClientID, pub.Message.TopicName, pub.QoS, len(pub.Message.Content))
+
 		switch pub.QoS {
 		case 0:
 		case 1:
@@ -297,16 +337,20 @@ func (c *Client) ServeMessage(ctx context.Context) error {
 				PacketID:    pub.PacketID,
 			}
 			if err := puback.Pack(c.conn.rwc); err != nil {
+				log.Printf("client puback send failed: client_id=%s, packet_id=%d, error=%v", c.options.ClientID, pub.PacketID, err)
 				return err
 			}
+			log.Printf("client puback sent: client_id=%s, packet_id=%d", c.options.ClientID, pub.PacketID)
 		case 2:
 			pubrec := packet.PUBREC{
 				FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBREC},
 				PacketID:    pub.PacketID,
 			}
 			if err := pubrec.Pack(c.conn.rwc); err != nil {
+				log.Printf("client pubrec send failed: client_id=%s, packet_id=%d, error=%v", c.options.ClientID, pub.PacketID, err)
 				return err
 			}
+			log.Printf("client pubrec sent: client_id=%s, packet_id=%d", c.options.ClientID, pub.PacketID)
 			c.conn.inFight.Put(pub)
 			return nil
 		}
@@ -328,8 +372,10 @@ func (c *Client) ServeMessage(ctx context.Context) error {
 			PacketID:    pubrel.PacketID,
 		}
 		if err := pubcomp.Pack(c.conn.rwc); err != nil {
+			log.Printf("client pubcomp send failed: client_id=%s, packet_id=%d, error=%v", c.options.ClientID, pubrel.PacketID, err)
 			return err
 		}
+		log.Printf("client pubcomp sent: client_id=%s, packet_id=%d", c.options.ClientID, pubrel.PacketID)
 	}
 	go c.onMessage(pub.Message)
 	return nil
@@ -338,25 +384,38 @@ func (c *Client) ServeMessage(ctx context.Context) error {
 func (c *Client) ConnectAndSubscribe(ctx context.Context) error {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
+	count := 0
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("mqtt: context done....\n")
+			log.Printf("client context done: client_id=%s", c.options.ClientID)
 			return ctx.Err()
 		case <-timer.C:
 			timer.Reset(3 * time.Second)
 		}
 		if err := c.connectAndSubscribe(ctx); err != nil {
-			log.Printf("connect error: %v", err)
+			count++
+			if count == 1 || count%10 == 0 {
+				log.Printf("client connect and subscribe error[%d]: client_id=%s, error=%v", count, c.options.ClientID, err)
+			}
+		} else {
+			count = 0
 		}
 	}
 }
 
 func (c *Client) connectAndSubscribe(ctx context.Context) error {
 	var err error
+
+	// 记录网络连接尝试日志
+	log.Printf("client attempting to dial: client_id=%s, server=%s", c.options.ClientID, c.URL.Host)
+
 	if c.conn.rwc, err = c.dial(ctx, "tcp", c.URL.Host); err != nil {
+		log.Printf("client dial failed: client_id=%s, server=%s, error=%v", c.options.ClientID, c.URL.Host, err)
 		return err
 	}
+
+	log.Printf("client dialed successfully: client_id=%s, server=%s", c.options.ClientID, c.URL.Host)
 
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error {
@@ -381,11 +440,17 @@ func (c *Client) connectAndSubscribe(ctx context.Context) error {
 }
 
 func (c *Client) Disconnect() error {
+	// 记录断开连接日志
+	log.Printf("client attempting to disconnect: client_id=%s", c.options.ClientID)
+
 	disconnect := packet.DISCONNECT{
 		FixedHeader: &packet.FixedHeader{Version: c.version, Kind: DISCONNECT},
 	}
 	if err := disconnect.Pack(c.conn.rwc); err != nil {
+		log.Printf("client disconnect packet send failed: client_id=%s, error=%v", c.options.ClientID, err)
 		return err
 	}
+
+	log.Printf("client disconnected successfully: client_id=%s", c.options.ClientID)
 	return nil
 }

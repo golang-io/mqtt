@@ -12,6 +12,11 @@
   },
   "Websocket": {
     "URL": "ws://0.0.0.0:8083"
+  },
+  "Websockets": {
+    "URL": "wss://0.0.0.0:8084",
+    "CertFile": "cert/mqtt.pem",
+    "KeyFile": "cert/mqtt.key"
   }
 }
 

@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -167,6 +168,7 @@ func NewServer(ctx context.Context) *Server {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	log.Printf("mqtt server shutting down...")
 	s.inShutdown.Store(true)
 	s.mu.Lock()
 	lnerr := s.closeListenersLocked()
@@ -273,6 +275,10 @@ func (s *Server) Serve(l net.Listener) error {
 			}
 			return err
 		}
+
+		// 记录新连接接受日志
+		log.Printf("connection accepted: remote=%s", rw.RemoteAddr().String())
+
 		connCtx := ctx
 		if cc := s.ConnContext; cc != nil {
 			connCtx = cc(connCtx, rw)
@@ -292,9 +298,11 @@ func (s *Server) trackConn(c *conn, add bool) {
 	if add {
 		stat.ActiveConnections.Inc()
 		s.activeConn[c] = struct{}{}
+		log.Printf("connection tracked: clientId=%s, remote: %s, connections=%d", c.ID, c.remoteAddr, len(s.activeConn))
 	} else {
 		stat.ActiveConnections.Dec()
 		delete(s.activeConn, c)
+		log.Printf("connection removed: clientId=%s, remote: %s, connections=%d", c.ID, c.remoteAddr, len(s.activeConn))
 	}
 }
 
@@ -348,7 +356,7 @@ func (s *Server) ListenAndServe(opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("mqtt serve: %s", u.Host)
+	log.Printf("mqtt serve: addr=%s", u.Host)
 	return s.Serve(ln)
 }
 
@@ -376,7 +384,7 @@ func (s *Server) ListenAndServeTLS(certFile, keyFile string, opts ...Option) err
 	if err != nil {
 		return err
 	}
-	log.Printf("mqtt(s) serve: %s", u.Host)
+	log.Printf("mqtts serve: path=%s, cert=%s, key=%s", u.Host, certFile, keyFile)
 	return s.ServeTLS(ln, certFile, keyFile)
 }
 
@@ -390,17 +398,85 @@ func (s *Server) ListenAndServeWebsocket(opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	s.WebsocketHandler = func(ws *websocket.Conn) {
-		ws.PayloadType = websocket.BinaryFrame
-		c := s.newConn(ws)
-		c.setState(c.rwc, StateNew, true) // before Serve can return
-		c.serve(context.Background())
+	// path 默认使用 /mqtt
+	path := u.Path
+	if path == "" {
+		path = "/mqtt"
 	}
+
+	// 使用已有的 handler；若未设置则提供默认 handler
+	wsHandler := s.WebsocketHandler
+	if wsHandler == nil {
+		wsHandler = func(ws *websocket.Conn) {
+			ws.PayloadType = websocket.BinaryFrame
+			c := s.newConn(ws)
+			c.setState(c.rwc, StateNew, true)
+			c.serve(context.Background())
+		}
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle(path, websocket.Handler(wsHandler))
 
 	ln, err := net.Listen("tcp", u.Host)
 	if err != nil {
 		return err
 	}
-	log.Printf("websocket serve: %s[todo]", u.Host)
-	return s.Serve(ln)
+	if !s.trackListener(&ln, true) {
+		_ = ln.Close()
+		return ErrServerClosed
+	}
+	defer s.trackListener(&ln, false)
+
+	log.Printf("mqtt-ws serve: addr=%s, path=%s", u.Host, path)
+	return http.Serve(ln, mux)
+}
+
+// ListenAndServeWebsocketTLS 启动基于 TLS 的 WebSocket 服务 (wss)
+func (s *Server) ListenAndServeWebsocketTLS(certFile, keyFile string, opts ...Option) error {
+	if s.shuttingDown() {
+		return ErrServerClosed
+	}
+	options := newOptions(opts...)
+	u, err := url.Parse(options.URL)
+	if err != nil {
+		return err
+	}
+	path := u.Path
+	if path == "" {
+		path = "/mqtt"
+	}
+
+	wsHandler := s.WebsocketHandler
+	if wsHandler == nil {
+		wsHandler = func(ws *websocket.Conn) {
+			ws.PayloadType = websocket.BinaryFrame
+			c := s.newConn(ws)
+			c.setState(c.rwc, StateNew, true)
+			c.serve(context.Background())
+		}
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle(path, websocket.Handler(wsHandler))
+
+	ln, err := net.Listen("tcp", u.Host)
+	if err != nil {
+		return err
+	}
+	if !s.trackListener(&ln, true) {
+		_ = ln.Close()
+		return ErrServerClosed
+	}
+	defer s.trackListener(&ln, false)
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return err
+	}
+	config := &tls.Config{Certificates: []tls.Certificate{cert}}
+	tlsListener := tls.NewListener(ln, config)
+
+	log.Printf("mqtt-wss serve: addr=%s, path=%s, cert=%s, key=%s", u.Host, path, certFile, keyFile)
+	return http.Serve(tlsListener, mux)
 }

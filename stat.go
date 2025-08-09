@@ -2,9 +2,9 @@ package mqtt
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-io/requests"
@@ -32,9 +32,21 @@ var (
 	}
 )
 
+func IN(x string, m ...string) bool {
+	for i := range m {
+		if strings.HasSuffix(x, m[i]) {
+			return true
+		}
+	}
+	return false
+}
+
 func ServerLog(ctx context.Context, stat *requests.Stat) {
-	b, err := json.Marshal(stat.Request.Body)
-	log.Printf("%s # body=%s, resp=%v, err=%v", stat.Print(), b, stat.Response.Body, err)
+	if stat.Request.URL == "/" || IN(stat.Request.URL, ".html", ".js", ".css") {
+		log.Println(stat.Print())
+		return
+	}
+	log.Printf("%s # body=%s, resp=%s", stat.Print(), stat.RequestBody(), stat.ResponseBody())
 }
 
 func Httpd() error {
@@ -43,9 +55,10 @@ func Httpd() error {
 	mux := requests.NewServeMux(requests.URL(CONFIG.HTTP.URL), requests.Logf(ServerLog))
 	mux.GET("/_metrics", promhttp.Handler())
 	mux.GET("/_paths", func(w http.ResponseWriter, r *http.Request) {
-		mux.Print()
-		w.Write([]byte("Hello, World!"))
+		mux.Print(w)
 	})
+	mux.GET("/", http.FileServer(http.Dir("web")))
+
 	mux.Pprof()
 	s := requests.NewServer(context.Background(), mux, requests.OnStart(func(s *http.Server) {
 		log.Printf("http serve: %s", s.Addr)

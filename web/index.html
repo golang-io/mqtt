@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQTT Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="dashboard">
+        <!-- 顶部导航栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fas fa-broadcast-tower"></i>
+                    <span>MQTT Dashboard</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <ul>
+                    <li class="active">
+                        <a href="index.html">
+                            <i class="fas fa-chart-line"></i>
+                            <span>概览</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="metrics.html">
+                            <i class="fas fa-chart-bar"></i>
+                            <span>指标</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#connections">
+                            <i class="fas fa-plug"></i>
+                            <span>连接</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#topics">
+                            <i class="fas fa-hashtag"></i>
+                            <span>主题</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#messages">
+                            <i class="fas fa-envelope"></i>
+                            <span>消息</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#logs">
+                            <i class="fas fa-file-alt"></i>
+                            <span>日志</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+            
+            <div class="sidebar-actions">
+                <div class="time-range-selector">
+                    <select id="timeRange">
+                        <option value="1h">过去1小时</option>
+                        <option value="6h">过去6小时</option>
+                        <option value="24h">过去24小时</option>
+                        <option value="7d">过去7天</option>
+                    </select>
+                </div>
+                <button class="btn-refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="serverless-ad">
+                    <h4>MQTT Serverless</h4>
+                    <button class="btn-learn-more">了解更多</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <div class="content">
+                <!-- 服务器信息 -->
+                <div class="server-info">
+                    <h2>MQTT 服务器 Dashboard</h2>
+                    <div class="server-details">
+                        <div class="detail-item">
+                            <span class="label">Broker:</span>
+                            <span class="value">127.0.0.1</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">TCP Port:</span>
+                            <span class="value">1883</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">WebSocket Secure Port:</span>
+                            <span class="value">8084</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">QUIC Port:</span>
+                            <span class="value">14567</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- KPI 卡片 -->
+                <div class="kpi-cards">
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <h3>消息流入速率</h3>
+                            <i class="fas fa-arrow-down"></i>
+                        </div>
+                        <div class="kpi-value" id="messageInflowRate">3061 条/秒</div>
+                        <div class="kpi-chart">
+                            <canvas id="inflowChart" width="200" height="40"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <h3>消息发出速率</h3>
+                            <i class="fas fa-arrow-up"></i>
+                        </div>
+                        <div class="kpi-value" id="messageOutflowRate">5702 条/秒</div>
+                        <div class="kpi-chart">
+                            <canvas id="outflowChart" width="200" height="40"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <h3>连接统计</h3>
+                            <i class="fas fa-plug"></i>
+                        </div>
+                        <div class="connection-stats">
+                            <div class="stat-item">
+                                <span class="label">总连接数:</span>
+                                <span class="value" id="totalConnections">105,351</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="label">在线连接数:</span>
+                                <span class="value online" id="onlineConnections">59,350</span>
+                                <span class="status-dot"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <h3>主题数</h3>
+                            <i class="fas fa-hashtag"></i>
+                        </div>
+                        <div class="kpi-value" id="topicCount">25,151</div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <h3>订阅数</h3>
+                            <i class="fas fa-list"></i>
+                        </div>
+                        <div class="kpi-value" id="subscriptionCount">117,277</div>
+                    </div>
+                </div>
+
+                <!-- 性能图表 -->
+                <div class="performance-charts">
+                    <div class="chart-container">
+                        <h3>消息流入</h3>
+                        <canvas id="messageInflowChart"></canvas>
+                    </div>
+
+                    <div class="chart-container">
+                        <h3>消息发出</h3>
+                        <canvas id="messageOutflowChart"></canvas>
+                    </div>
+
+                    <div class="chart-container">
+                        <h3>消息丢弃</h3>
+                        <canvas id="messageDroppedChart"></canvas>
+                    </div>
+
+                    <div class="chart-container">
+                        <h3>连接数</h3>
+                        <canvas id="connectionsChart"></canvas>
+                    </div>
+
+                    <div class="chart-container">
+                        <h3>主题数</h3>
+                        <canvas id="topicsChart"></canvas>
+                    </div>
+
+                    <div class="chart-container">
+                        <h3>订阅数</h3>
+                        <canvas id="subscriptionsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

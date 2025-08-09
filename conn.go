@@ -98,6 +98,9 @@ func (c *conn) serve(ctx context.Context) {
 		c.remoteAddr = ra.String()
 	}
 
+	// 记录客户端连接日志
+	log.Printf("connect connected: remote=%s", c.remoteAddr)
+
 	defer func() {
 		if err := recover(); err != nil && err != ErrAbortHandler {
 			buf := make([]byte, size)
@@ -105,6 +108,10 @@ func (c *conn) serve(ctx context.Context) {
 			log.Printf("mqtt: panic serving %v: %v", c.remoteAddr, err)
 			log.Printf("%s", buf)
 		}
+
+		// 记录客户端断开连接日志
+		log.Printf("connect disconnected: clientId=%s, remote=%s", c.ID, c.remoteAddr)
+
 		c.server.memorySubscribed.Unsubscribe(c)
 		c.close()
 		c.setState(c.rwc, StateClosed, true)
@@ -199,6 +206,14 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 			}
 		}
 		c.ID, c.version, c.willTopic, c.willPayload = rpkt.ClientID, rpkt.Version, rpkt.WillTopic, rpkt.WillPayload
+
+		// 记录客户端认证和连接成功日志
+		if connack.ConnectReturnCode.Code == 0 {
+			log.Printf("client auth ok: clientId=%s, username=%s, reomte=%s", c.ID, rpkt.Username, c.remoteAddr)
+		} else {
+			log.Printf("client auth failed: clientId=%s, username=%s, reomte=%s, reason=%v", c.ID, rpkt.Username, c.remoteAddr, connack.ConnectReturnCode)
+		}
+
 		spkt = connack
 	case *packet.PUBLISH:
 		switch rpkt.QoS {
@@ -231,27 +246,52 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 		return
 	case *packet.SUBSCRIBE:
 		var reasons []packet.ReasonCode
+		var subscribedTopics []string
+		var failedTopics []string
+
 		for _, subscribe := range rpkt.Subscriptions {
 			if err := c.subscribeTopics.Subscribe(subscribe.TopicFilter); err != nil {
 				log.Printf("subscribeTopics.Subscribe: err=%v", err)
 				reasons = append(reasons, packet.ErrTopicNameInvalid)
+				failedTopics = append(failedTopics, subscribe.TopicFilter)
 			} else {
 				reasons = append(reasons, packet.ReasonCode{Code: subscribe.MaximumQoS})
+				subscribedTopics = append(subscribedTopics, subscribe.TopicFilter)
 			}
 		}
 
 		c.server.memorySubscribed.Subscribe(c)
+
+		// 记录订阅日志
+		if len(subscribedTopics) > 0 {
+			log.Printf("client subscribed: clientId=%s, reomte=%s, topics: %v", c.ID, c.remoteAddr, subscribedTopics)
+		}
+		if len(failedTopics) > 0 {
+			log.Printf("client subscription failed: clientId=%s, reomte=%s, failed_topics: %v", c.ID, c.remoteAddr, failedTopics)
+		}
+
 		spkt = &packet.SUBACK{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: SUBACK}, PacketID: rpkt.PacketID, ReasonCode: reasons}
 	case *packet.UNSUBSCRIBE:
+		var unsubscribedTopics []string
 		for _, subscribe := range rpkt.Subscriptions {
 			c.subscribeTopics.Unsubscribe(subscribe.TopicFilter)
+			unsubscribedTopics = append(unsubscribedTopics, subscribe.TopicFilter)
 		}
 		c.server.memorySubscribed.Unsubscribe(c)
+
+		// 记录取消订阅日志
+		if len(unsubscribedTopics) > 0 {
+			log.Printf("client unsubscribed: clientId=%s, reomte=%s, topics: %v", c.ID, c.remoteAddr, unsubscribedTopics)
+		}
+
 		spkt = &packet.UNSUBACK{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: UNSUBACK, QoS: 1}, PacketID: rpkt.PacketID}
 	case *packet.PINGREQ:
 		// 服务端必须发送 PINGRESP报文响应客户端的PINGREQ报文 [MQTT-3.12.4-1]。
 		spkt = &packet.PINGRESP{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PINGRESP}}
 	case *packet.DISCONNECT:
+		// 记录客户端主动断开连接日志
+		log.Printf("client requested disconnect: clientId=%s, reomte=%s", c.ID, c.remoteAddr)
+
 		c.willTopic, c.willPayload = "", nil // 服务端在收到DISCONNECT报文时: 必须丢弃任何与当前连接关联的未发布的遗嘱消息，具体描述见 3.1.2.5节 [MQTT-3.14.4-3]。
 		panic(ErrAbortHandler)               // 服务端在收到DISCONNECT报文时: 应该关闭网络连接，如果客户端 还没有这么做。
 	case *packet.AUTH:

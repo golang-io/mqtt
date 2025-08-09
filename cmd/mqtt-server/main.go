@@ -49,6 +49,12 @@ func main() {
 		return s.ListenAndServeWebsocket(mqtt.URL(mqtt.CONFIG.WebSocket.URL))
 	})
 	group.Go(func() error {
+		if mqtt.CONFIG.WebSockets.URL == "" {
+			return nil
+		}
+		return s.ListenAndServeWebsocketTLS(mqtt.CONFIG.WebSockets.CertFile, mqtt.CONFIG.WebSockets.KeyFile, mqtt.URL(mqtt.CONFIG.WebSockets.URL))
+	})
+	group.Go(func() error {
 		if mqtt.CONFIG.HTTP.URL == "" {
 			return nil
 		}

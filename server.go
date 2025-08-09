@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -298,11 +299,11 @@ func (s *Server) trackConn(c *conn, add bool) {
 	if add {
 		stat.ActiveConnections.Inc()
 		s.activeConn[c] = struct{}{}
-		log.Printf("connection tracked: clientId=%s, remote: %s, connections=%d", c.ID, c.remoteAddr, len(s.activeConn))
+		log.Printf("connect tracked: clientId=%s, remote: %s, connections=%d", c.ID, c.remoteAddr, len(s.activeConn))
 	} else {
 		stat.ActiveConnections.Dec()
 		delete(s.activeConn, c)
-		log.Printf("connection removed: clientId=%s, remote: %s, connections=%d", c.ID, c.remoteAddr, len(s.activeConn))
+		log.Printf("connect removed: clientId=%s, remote: %s, connections=%d", c.ID, c.remoteAddr, len(s.activeConn))
 	}
 }
 
@@ -388,7 +389,7 @@ func (s *Server) ListenAndServeTLS(certFile, keyFile string, opts ...Option) err
 	return s.ServeTLS(ln, certFile, keyFile)
 }
 
-// ListenAndServeWebsocket TODO
+// ListenAndServeWebsocket 启动基于 WebSocket 的 MQTT 服务 (ws)
 func (s *Server) ListenAndServeWebsocket(opts ...Option) error {
 	if s.shuttingDown() {
 		return ErrServerClosed
@@ -416,7 +417,22 @@ func (s *Server) ListenAndServeWebsocket(opts ...Option) error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle(path, websocket.Handler(wsHandler))
+	// 使用自定义握手以协商 mqtt 子协议
+	wsServer := websocket.Server{
+		Handshake: func(cfg *websocket.Config, req *http.Request) error {
+			// 兼容多种 MQTT 子协议标识
+			for _, sp := range cfg.Protocol {
+				p := strings.ToLower(strings.TrimSpace(sp))
+				if p == "mqtt" || p == "mqttv3.1" || p == "mqttv3.1.1" {
+					cfg.Protocol = []string{sp}
+					break
+				}
+			}
+			return nil
+		},
+		Handler: wsHandler,
+	}
+	mux.Handle(path, wsServer)
 
 	ln, err := net.Listen("tcp", u.Host)
 	if err != nil {
@@ -458,7 +474,21 @@ func (s *Server) ListenAndServeWebsocketTLS(certFile, keyFile string, opts ...Op
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle(path, websocket.Handler(wsHandler))
+	// 使用自定义握手以协商 mqtt 子协议
+	wsServer := websocket.Server{
+		Handshake: func(cfg *websocket.Config, req *http.Request) error {
+			for _, sp := range cfg.Protocol {
+				p := strings.ToLower(strings.TrimSpace(sp))
+				if p == "mqtt" || p == "mqttv3.1" || p == "mqttv3.1.1" {
+					cfg.Protocol = []string{sp}
+					break
+				}
+			}
+			return nil
+		},
+		Handler: wsHandler,
+	}
+	mux.Handle(path, wsServer)
 
 	ln, err := net.Listen("tcp", u.Host)
 	if err != nil {

@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"fmt"
+
 	"github.com/golang-io/mqtt/packet"
 	"github.com/golang-io/requests"
 )

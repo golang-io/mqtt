@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang-io/mqtt/packet"
+	"golang.org/x/net/websocket"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -106,7 +107,7 @@ func (c *Client) roundTrip(req packet.Packet) (packet.Packet, error) {
 		if err != nil {
 			return nil, err
 		}
-		c.conn = &conn{rwc: con, remoteAddr: c.conn.rwc.RemoteAddr().String()}
+		c.conn = &conn{rwc: con, remoteAddr: con.RemoteAddr().String()}
 	}
 	err := req.Pack(c.conn.rwc)
 	if err != nil {
@@ -116,22 +117,61 @@ func (c *Client) roundTrip(req packet.Packet) (packet.Packet, error) {
 	return nil, nil
 }
 
-func (c *Client) dial(ctx context.Context, network, addr string) (net.Conn, error) {
-	if c.DialContext != nil {
-		c, err := c.DialContext(ctx, network, addr)
-		if c == nil && err == nil {
+func (c *Client) dial(ctx context.Context, scheme, addr string) (net.Conn, error) {
+	// 用户自定义拨号优先
+	if c.DialContext != nil && (scheme == "tcp" || scheme == "mqtt") {
+		con, err := c.DialContext(ctx, "tcp", addr)
+		if con == nil && err == nil {
 			err = errors.New("mqtt: Transport.DialContext hook returned (nil, nil)")
 		}
-		return c, err
+		return con, err
 	}
-	if c.DialTLSContext != nil {
-		c, err := c.DialTLSContext(ctx, network, addr)
-		if c == nil && err == nil {
+	if c.DialTLSContext != nil && (scheme == "tls" || scheme == "mqtts") {
+		con, err := c.DialTLSContext(ctx, "tcp", addr)
+		if con == nil && err == nil {
 			err = errors.New("mqtt: Transport.DialTLSContext hook returned (nil, nil)")
 		}
-		return c, err
+		return con, err
 	}
-	return (&net.Dialer{}).DialContext(ctx, network, addr)
+
+	switch scheme {
+	case "mqtt", "tcp":
+		return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	case "mqtts", "tls":
+		return tls.DialWithDialer(&net.Dialer{}, "tcp", addr, c.TLSClientConfig)
+	case "ws", "wss":
+		// 构造 WebSocket URL，默认路径 /mqtt
+		path := c.URL.Path
+		if path == "" {
+			path = "/mqtt"
+		}
+		loc := &url.URL{Scheme: scheme, Host: addr, Path: path}
+		// 兼容 Origin 要求
+		originScheme := "http"
+		if scheme == "wss" {
+			originScheme = "https"
+		}
+		origin := &url.URL{Scheme: originScheme, Host: addr}
+
+		cfg, err := websocket.NewConfig(loc.String(), origin.String())
+		if err != nil {
+			return nil, err
+		}
+		// 协商 mqtt 子协议，二进制帧
+		cfg.Protocol = []string{"mqtt"}
+		if scheme == "wss" {
+			cfg.TlsConfig = c.TLSClientConfig
+		}
+		ws, err := websocket.DialConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+		ws.PayloadType = websocket.BinaryFrame
+		return ws, nil
+	default:
+		// 兜底按 tcp 处理
+		return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	}
 }
 
 func New(opts ...Option) *Client {
@@ -410,7 +450,7 @@ func (c *Client) connectAndSubscribe(ctx context.Context) error {
 	// 记录网络连接尝试日志
 	log.Printf("client attempting to dial: client_id=%s, server=%s", c.options.ClientID, c.URL.Host)
 
-	if c.conn.rwc, err = c.dial(ctx, "tcp", c.URL.Host); err != nil {
+	if c.conn.rwc, err = c.dial(ctx, c.URL.Scheme, c.URL.Host); err != nil {
 		log.Printf("client dial failed: client_id=%s, server=%s, error=%v", c.options.ClientID, c.URL.Host, err)
 		return err
 	}

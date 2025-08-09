@@ -15,6 +15,7 @@ import (
 
 	"github.com/golang-io/mqtt/packet"
 	"github.com/golang-io/mqtt/topic"
+	"golang.org/x/net/websocket"
 )
 
 // conn represents the server side of an HTTP connection.
@@ -94,8 +95,18 @@ func (c *conn) close() {
 
 // Serve a new connection.
 func (c *conn) serve(ctx context.Context) {
-	if ra := c.rwc.RemoteAddr(); ra != nil {
-		c.remoteAddr = ra.String()
+	// 兼容 websocket.Conn 的 RemoteAddr 字段实现，避免 URL.String 的空指针
+	if ws, ok := c.rwc.(*websocket.Conn); ok {
+		if req := ws.Request(); req != nil {
+			c.remoteAddr = req.RemoteAddr
+		} else {
+			// 兜底不调用 ra.String()，避免潜在的 URL nil 崩溃
+			c.remoteAddr = ""
+		}
+	} else {
+		if ra := c.rwc.RemoteAddr(); ra != nil {
+			c.remoteAddr = ra.String()
+		}
 	}
 
 	// 记录客户端连接日志
@@ -159,9 +170,6 @@ func (c *conn) serve(ctx context.Context) {
 	for {
 		rw, err := c.readRequest(ctx)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return
-			}
 			return
 		}
 		serverHandler{c.server}.ServeMQTT(rw, rw.packet)
@@ -174,13 +182,13 @@ func (c *conn) readRequest(_ context.Context) (*response, error) {
 	w, err := &response{conn: c}, error(nil)
 	w.packet, err = packet.Unpack(c.version, c.rwc)
 	stat.PacketReceived.Inc()
-	if err != nil {
+	if err != nil && !errors.Is(err, io.EOF) {
 		pktLog.Printf("recv|%s - %s, err=%v", Kind[w.packet.Kind()], c.ID, err)
 		return nil, fmt.Errorf("makeRequest: err=%w", err)
 	}
 	//pktLog.Printf("recv|%s - %s", Kind[w.packet.Kind()], c.ID)
 
-	return w, nil
+	return w, err
 }
 
 type defaultHandler struct{}
@@ -189,6 +197,8 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 	var spkt packet.Packet
 	c := w.(*response).conn
 	switch rpkt := req.(type) {
+	case *packet.RESERVED:
+		return
 	case *packet.CONNECT:
 		c.version, c.ID = rpkt.Version, rpkt.ClientID
 		connack := &packet.CONNACK{
@@ -296,7 +306,7 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 		panic(ErrAbortHandler)               // 服务端在收到DISCONNECT报文时: 应该关闭网络连接，如果客户端 还没有这么做。
 	case *packet.AUTH:
 	default:
-		panic("unknown packet type")
+		panic(fmt.Sprintf("unknown packet type: %T", rpkt))
 	}
 	if err := w.OnSend(spkt); err != nil {
 		log.Printf("mqtt-onSend: err=%v", err)

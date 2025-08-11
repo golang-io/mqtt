@@ -6,17 +6,56 @@ import (
 	"io"
 )
 
+// SUBACK 订阅确认报文
+//
+// MQTT v3.1.1: 参考章节 3.9 SUBACK - Subscribe acknowledgement
+// MQTT v5.0: 参考章节 3.9 SUBACK - Subscribe acknowledgement
+//
+// 报文结构:
+// 固定报头: 报文类型0x09，标志位必须为0
+// 可变报头: 报文标识符、订阅确认属性(v5.0)
+// 载荷: 订阅返回码列表，每个返回码对应一个订阅请求
+//
+// 版本差异:
+// - v3.1.1: 基本的订阅确认功能，包含报文标识符和返回码列表
+// - v5.0: 在v3.1.1基础上增加了属性系统，支持原因字符串、用户属性等
+//
+// 用途:
+// - 用于确认SUBSCRIBE报文的处理结果
+// - 为每个订阅请求提供QoS等级反馈
+// - 通知客户端订阅是否成功
+//
+// 标志位规则:
+// - DUP: 必须为0
+// - QoS: 必须为0
+// - RETAIN: 必须为0
 type SUBACK struct {
 	*FixedHeader `json:"FixedHeader,omitempty"`
-	PacketID     uint16 `json:"PacketID,omitempty"` // 报文标识符
 
+	// PacketID 报文标识符
+	// 参考章节: 2.3.1 Packet Identifier
+	// 位置: 可变报头第1个字段
+	// 要求: 必须包含，范围1-65535
+	// 用途: 用于标识对应的SUBSCRIBE报文，确保确认的可靠性
+	PacketID uint16 `json:"PacketID,omitempty"`
+
+	// SubackProps 订阅确认属性 (v5.0新增)
+	// 参考章节: 3.9.2.2 SUBACK Properties
+	// 位置: 可变报头，在报文标识符之后
+	// 包含原因字符串、用户属性等
 	SubackProps *SubackProperties
 
-	// payload
-	// 0x00 - 最大 QoS 0
-	// 0x01 - 成功 – 最大 QoS 1
-	// 0x02 - 成功 – 最大 QoS 2
-	// 0x80 - Failure 失败
+	// 载荷部分
+	// 参考章节: 3.9.3 SUBACK Payload
+	// 位置: 载荷部分
+	// 要求: 至少包含一个返回码
+	// 每个返回码对应SUBSCRIBE报文中的一个订阅请求
+	// 返回码值:
+	// - 0x00: 最大 QoS 0 - 订阅成功，最大QoS为0
+	// - 0x01: 最大 QoS 1 - 订阅成功，最大QoS为1
+	// - 0x02: 最大 QoS 2 - 订阅成功，最大QoS为2
+	// - 0x80: 失败 - 订阅失败
+	// 注意: 返回码列表的顺序必须与SUBSCRIBE报文中的订阅请求顺序一致
 	ReasonCode []ReasonCode `json:"ReasonCode,omitempty"`
 }
 
@@ -83,8 +122,35 @@ func (pkt *SUBACK) Unpack(buf *bytes.Buffer) error {
 	return nil
 }
 
+// SubackProperties 订阅确认属性 (v5.0新增)
+// 参考章节: 3.9.2.2 SUBACK Properties
+// 包含各种订阅确认选项，用于扩展确认功能
+//
+// 版本差异:
+// - v3.1.1: 不支持属性系统
+// - v5.0: 完整的属性系统，支持原因字符串、用户属性等
 type SubackProperties struct {
+	// ReasonString 原因字符串
+	// 属性标识符: 31 (0x1F)
+	// 参考章节: 3.9.2.2.2 Reason String
+	// 类型: UTF-8编码字符串
+	// 含义: 表示此次订阅确认相关的原因
+	// 注意:
+	// - 此原因字符串是为诊断而设计的可读字符串，不应该被客户端所解析
+	// - 包含多个原因字符串将造成协议错误
+	// - 用于提供额外的订阅确认信息
 	ReasonString string
+
+	// UserProperty 用户属性
+	// 属性标识符: 38 (0x26)
+	// 参考章节: 3.9.2.2.3 User Property
+	// 类型: UTF-8字符串对
+	// 含义: 用户定义的名称/值对，可以出现多次
+	// 注意:
+	// - 用户属性可以出现多次，表示多个名字/值对
+	// - 相同的名字可以出现多次
+	// - 本规范不做定义，由应用程序确定含义和解释
+	// - 可用于传递订阅确认相关的额外信息
 	UserProperty map[string][]string
 }
 

@@ -61,7 +61,6 @@ func (pkt *CONNACK) Pack(w io.Writer) error {
 	if err := pkt.FixedHeader.Pack(w); err != nil {
 		return err
 	}
-	buf.Bytes()
 	_, err := buf.WriteTo(w)
 	return err
 }

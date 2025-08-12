@@ -3,7 +3,6 @@ package packet
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
 )
 
@@ -145,28 +144,22 @@ type PubrelProperties struct {
 	// - 相同的名字可以出现多次
 	// - 本规范不做定义，由应用程序确定含义和解释
 	// - 可用于传递发布释放相关的额外信息
-	UserProperty map[string][]string
+	UserProperty UserProperty
 }
 
 func (props *PubrelProperties) Pack() ([]byte, error) {
 	buf := GetBuffer()
 	defer PutBuffer(buf)
 
-	if props.ReasonString != "" {
-		buf.WriteByte(0x1F)
-		buf.Write(encodeUTF8(props.ReasonString))
+	if err := props.ReasonString.Pack(buf); err != nil {
+		return nil, err
 	}
 
-	if len(props.UserProperty) != 0 {
-		for k, v := range props.UserProperty {
-			for i := range v {
-				buf.WriteByte(0x26)
-				buf.Write(encodeUTF8(k))
-				buf.Write(encodeUTF8(v[i]))
-			}
-		}
+	if err := props.UserProperty.Pack(buf); err != nil {
+		return nil, err
 	}
-	return buf.Bytes(), nil
+
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 func (props *PubrelProperties) Unpack(buf *bytes.Buffer) error {
@@ -187,16 +180,9 @@ func (props *PubrelProperties) Unpack(buf *bytes.Buffer) error {
 				return err
 			}
 		case 0x26:
-			if props.UserProperty == nil {
-				props.UserProperty = make(map[string][]string)
+			if uLen, err = props.UserProperty.Unpack(buf); err != nil {
+				return err
 			}
-
-			userProperty := &UserProperty{}
-			uLen, err = userProperty.Unpack(buf)
-			if err != nil {
-				return fmt.Errorf("failed to unpack user property: %w", err)
-			}
-			props.UserProperty[userProperty.Name] = append(props.UserProperty[userProperty.Name], userProperty.Value)
 		default:
 			return ErrMalformedProperties
 		}

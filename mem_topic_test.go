@@ -35,7 +35,7 @@ func TestMemorySubscribedPublish(t *testing.T) {
 		Content:   []byte("test message"),
 	}
 
-	err := memorySub.Publish(message)
+	err := memorySub.Publish(message, nil)
 	if err != nil {
 		t.Errorf("Publish should not return error, got %v", err)
 	}
@@ -60,14 +60,14 @@ func TestMemorySubscribedPublishExistingTopic(t *testing.T) {
 		TopicName: "test/topic",
 		Content:   []byte("test message 1"),
 	}
-	memorySub.Publish(message1)
+	memorySub.Publish(message1, nil)
 
 	// Publish to same topic again
 	message2 := &packet.Message{
 		TopicName: "test/topic",
 		Content:   []byte("test message 2"),
 	}
-	err := memorySub.Publish(message2)
+	err := memorySub.Publish(message2, nil)
 	if err != nil {
 		t.Errorf("Publish to existing topic should not return error, got %v", err)
 	}
@@ -178,7 +178,7 @@ func TestTopicSubscribedExchange(t *testing.T) {
 		}
 	}()
 
-	ts.Exchange(message)
+	ts.Exchange(message, nil)
 }
 
 func TestMemorySubscribedCleanEmptyTopic(t *testing.T) {
@@ -191,7 +191,7 @@ func TestMemorySubscribedCleanEmptyTopic(t *testing.T) {
 		TopicName: "empty/topic",
 		Content:   []byte("test message"),
 	}
-	memorySub.Publish(message)
+	memorySub.Publish(message, nil)
 
 	// Verify topic exists
 	memorySub.mu.RLock()

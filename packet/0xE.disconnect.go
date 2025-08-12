@@ -2,8 +2,6 @@ package packet
 
 import (
 	"bytes"
-	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 )
@@ -73,29 +71,6 @@ func NewDISCONNECT(version byte, reasonCode ReasonCode) *DISCONNECT {
 	}
 }
 
-// Validate 验证DISCONNECT包的协议合规性
-// 参考章节: 3.14.1 DISCONNECT Fixed Header, 3.14.2 DISCONNECT Variable Header
-func (pkt *DISCONNECT) Validate() error {
-	// 检查固定报头标志位 [MQTT-3.14.1-1]
-	if pkt.Dup != 0 || pkt.QoS != 0 || pkt.Retain != 0 {
-		return fmt.Errorf("DISCONNECT packet flags must be 0, got Dup:%d QoS:%d Retain:%d", pkt.Dup, pkt.QoS, pkt.Retain)
-	}
-
-	// 检查认证原因码
-	if !isValidDisconnectReasonCode(pkt.ReasonCode.Code) {
-		return fmt.Errorf("invalid DISCONNECT reason code: 0x%02X", pkt.ReasonCode.Code)
-	}
-
-	// 验证属性
-	if pkt.Props != nil {
-		if err := pkt.Props.Validate(); err != nil {
-			return fmt.Errorf("DISCONNECT properties validation failed: %w", err)
-		}
-	}
-
-	return nil
-}
-
 // isValidDisconnectReasonCode 检查断开原因码是否有效
 // 参考章节: 3.14.2.1 Disconnect Reason Code
 func isValidDisconnectReasonCode(code uint8) bool {
@@ -112,11 +87,6 @@ func (pkt *DISCONNECT) Kind() byte {
 }
 
 func (pkt *DISCONNECT) Pack(w io.Writer) error {
-	// 验证包的有效性
-	if err := pkt.Validate(); err != nil {
-		return fmt.Errorf("DISCONNECT packet validation failed: %w", err)
-	}
-
 	buf := GetBuffer()
 	defer PutBuffer(buf)
 
@@ -214,7 +184,7 @@ type DisconnectProperties struct {
 	// - 0xFFFFFFFF: 会话永不过期
 	// 注意: 包含多个会话过期间隔将造成协议错误
 	// [MQTT-3.14.2-2] 服务端不能在DISCONNECT中发送此属性
-	SessionExpiryInterval uint32
+	SessionExpiryInterval SessionExpiryInterval
 
 	// ReasonString 原因字符串
 	// 属性标识符: 31 (0x1F)
@@ -225,7 +195,7 @@ type DisconnectProperties struct {
 	// - 此原因字符串是为诊断而设计的可读字符串，不应该被客户端所解析
 	// - 包含多个原因字符串将造成协议错误
 	// - [MQTT-3.14.2-3] 不能超过接收方指定的最大报文长度
-	ReasonString string
+	ReasonString ReasonString
 
 	// UserProperty 用户属性
 	// 属性标识符: 38 (0x26)
@@ -237,7 +207,7 @@ type DisconnectProperties struct {
 	// - 相同的名字可以出现多次
 	// - 本规范不做定义，由应用程序确定含义和解释
 	// - [MQTT-3.14.2-4] 不能超过接收方指定的最大报文长度
-	UserProperty map[string][]string
+	UserProperty UserProperty
 
 	// ServerReference 服务端引用
 	// 属性标识符: 28 (0x1C)
@@ -248,170 +218,64 @@ type DisconnectProperties struct {
 	// - 包含多个服务端引用将造成协议错误
 	// - 服务端发送DISCONNECT时包含服务端引用和原因码0x9C或0x9D
 	// - 参考章节4.11 Server Redirection了解服务端引用的使用
-	ServerReference string
-}
-
-// Validate 验证断开属性的协议合规性
-// 参考章节: 3.14.2.2 DISCONNECT Properties
-func (props *DisconnectProperties) Validate() error {
-	// 验证UTF-8字符串
-	if props.ReasonString != "" {
-		if !isValidUTF8String(props.ReasonString) {
-			return errors.New("reason string contains invalid UTF-8")
-		}
-	}
-
-	if props.ServerReference != "" {
-		if !isValidUTF8String(props.ServerReference) {
-			return errors.New("server reference contains invalid UTF-8")
-		}
-	}
-
-	// 验证用户属性
-	if len(props.UserProperty) > 0 {
-		for key, values := range props.UserProperty {
-			if !isValidUTF8String(key) {
-				return fmt.Errorf("user property key contains invalid UTF-8: %s", key)
-			}
-			for _, value := range values {
-				if !isValidUTF8String(value) {
-					return fmt.Errorf("user property value contains invalid UTF-8: %s", value)
-				}
-			}
-		}
-	}
-
-	return nil
+	ServerReference ServerReference
 }
 
 func (props *DisconnectProperties) Pack() ([]byte, error) {
-	// 验证属性
-	if err := props.Validate(); err != nil {
-		return nil, fmt.Errorf("properties validation failed: %w", err)
-	}
-
 	buf := GetBuffer()
 	defer PutBuffer(buf)
 
-	// 写入会话过期间隔 (可选)
-	if props.SessionExpiryInterval != 0 {
-		buf.WriteByte(0x11)
-		buf.Write(i4b(props.SessionExpiryInterval))
+	if err := props.SessionExpiryInterval.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	// 写入原因字符串 (可选)
-	if props.ReasonString != "" {
-		buf.WriteByte(0x1F)
-		buf.Write(encodeUTF8(props.ReasonString))
+	if err := props.ReasonString.Pack(buf); err != nil {
+		return nil, err
 	}
 
 	// 写入用户属性 (可选，可多次)
-	if len(props.UserProperty) > 0 {
-		for key, values := range props.UserProperty {
-			for _, value := range values {
-				buf.WriteByte(0x26)
-				buf.Write(encodeUTF8(key))
-				buf.Write(encodeUTF8(value))
-			}
-		}
+	if err := props.UserProperty.Pack(buf); err != nil {
+		return nil, err
 	}
 
-	// 写入服务端引用 (可选)
-	if props.ServerReference != "" {
-		buf.WriteByte(0x1C)
-		buf.Write(encodeUTF8(props.ServerReference))
+	if err := props.ServerReference.Pack(buf); err != nil {
+		return nil, err
 	}
 
-	return buf.Bytes(), nil
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 func (props *DisconnectProperties) Unpack(buf *bytes.Buffer) error {
-	// 读取属性长度
 	propsLen, err := decodeLength(buf)
 	if err != nil {
 		return fmt.Errorf("failed to decode properties length: %w", err)
 	}
-
-	// 记录已处理的属性，用于重复性检查（只检查不允许重复的属性）
-	processedProps := make(map[uint8]bool)
-
-	// 解析属性
 	for i := uint32(0); i < propsLen; {
-		// 读取属性标识符 (1字节)
-		if buf.Len() < 1 {
-			return fmt.Errorf("insufficient data for property ID")
+		propsId, err := decodeLength(buf)
+		if err != nil {
+			return err
 		}
-		propID := buf.Next(1)[0]
-
-		// 检查属性是否重复（只检查不允许重复的属性）
-		if propID == 0x11 || propID == 0x1F || propID == 0x1C { // Session Expiry Interval, Reason String, Server Reference
-			if processedProps[uint8(propID)] {
-				return fmt.Errorf("duplicate property ID: 0x%02X", propID)
-			}
-			processedProps[uint8(propID)] = true
-		}
-
-		// 根据属性标识符解析属性值
-		switch propID {
+		uLen := uint32(0)
+		switch propsId {
 		case 0x11: // Session Expiry Interval
-			if props.SessionExpiryInterval != 0 {
-				return fmt.Errorf("duplicate session expiry interval")
+			if uLen, err = props.SessionExpiryInterval.Unpack(buf); err != nil {
+				return err
 			}
-			props.SessionExpiryInterval = binary.BigEndian.Uint32(buf.Next(4))
-			i += 4
-
-		case 0x1F: // Reason String
-			props.ReasonString, _ = decodeUTF8[string](buf)
-			i += uint32(len(props.ReasonString)) + 2 // +2 for property ID and length
-
-		case 0x26: // User Property
-			if props.UserProperty == nil {
-				props.UserProperty = make(map[string][]string)
-			}
-			key, _ := decodeUTF8[string](buf)
-			value, _ := decodeUTF8[string](buf)
-			props.UserProperty[key] = append(props.UserProperty[key], value)
-			i += uint32(len(key)+len(value)) + 3 // +3 for property ID and two lengths
-
 		case 0x1C: // Server Reference
-			if props.ServerReference != "" {
-				return fmt.Errorf("duplicate server reference")
+			if uLen, err = props.ServerReference.Unpack(buf); err != nil {
+				return err
 			}
-			props.ServerReference, _ = decodeUTF8[string](buf)
-			i += uint32(len(props.ServerReference)) + 2 // +2 for property ID and length
-
+		case 0x1F: // Reason String
+			if uLen, err = props.ReasonString.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x26: // User Property
+			if uLen, err = props.UserProperty.Unpack(buf); err != nil {
+				return err
+			}
 		default:
-			return fmt.Errorf("unknown DISCONNECT property ID: 0x%02X", propID)
+			return fmt.Errorf("unknown DISCONNECT property ID: 0x%02X", propsId)
 		}
+		i += uLen
 	}
-
-	// 最终验证
-	return props.Validate()
-}
-
-// String 返回DISCONNECT包的字符串表示
-func (pkt *DISCONNECT) String() string {
-	if pkt == nil {
-		return "DISCONNECT<nil>"
-	}
-
-	result := fmt.Sprintf("DISCONNECT{ReasonCode:0x%02X", pkt.ReasonCode.Code)
-
-	if pkt.Props != nil {
-		if pkt.Props.SessionExpiryInterval != 0 {
-			result += fmt.Sprintf(", SessionExpiry:%d", pkt.Props.SessionExpiryInterval)
-		}
-		if pkt.Props.ReasonString != "" {
-			result += fmt.Sprintf(", Reason:%s", pkt.Props.ReasonString)
-		}
-		if len(pkt.Props.UserProperty) > 0 {
-			result += fmt.Sprintf(", UserProps:%d", len(pkt.Props.UserProperty))
-		}
-		if pkt.Props.ServerReference != "" {
-			result += fmt.Sprintf(", ServerRef:%s", pkt.Props.ServerReference)
-		}
-	}
-
-	result += "}"
-	return result
+	return nil
 }

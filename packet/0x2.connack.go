@@ -2,7 +2,6 @@ package packet
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -246,7 +245,7 @@ type ConnackProps struct {
 	// - 如果会话过期间隔值未指定，则使用CONNECT报文中指定的会话过期时间间隔
 	// - 服务端使用此属性通知客户端它使用的会话过期时间间隔与客户端在CONNECT中发送的值不同
 	// - 更详细的关于会话过期时间的描述，请参考3.1.2.11.2节
-	SessionExpiryInterval uint32
+	SessionExpiryInterval SessionExpiryInterval
 
 	// ReceiveMaximum 接收最大值
 	// 属性标识符: 33 (0x21)
@@ -259,7 +258,7 @@ type ConnackProps struct {
 	// - 没有机制可以限制客户端试图发送的QoS为0的发布消息
 	// - 如果没有设置最大接收值，将使用默认值65535
 	// - 关于接收最大值的详细使用，参考4.9节流控部分
-	ReceiveMaximum uint16
+	ReceiveMaximum ReceiveMaximum
 
 	// MaximumQoS 最大服务质量
 	// 属性标识符: 36 (0x24)
@@ -274,7 +273,7 @@ type ConnackProps struct {
 	// - 如果从服务端接收到了最大QoS等级，则客户端不能发送超过最大QoS等级所指定的QoS等级的PUBLISH报文 [MQTT-3.2.2-11]
 	// - 服务端接收到超过其指定的最大服务质量的PUBLISH报文将造成协议错误
 	// - 如果服务端收到包含遗嘱的QoS超过服务端处理能力的CONNECT报文，服务端必须拒绝此连接
-	MaximumQoS uint8
+	MaximumQoS MaximumQoS
 
 	// RetainAvailable 保留可用
 	// 属性标识符: 37 (0x25)
@@ -286,7 +285,7 @@ type ConnackProps struct {
 	// - 包含多个保留可用字段或保留可用字段值不为0也不为1将造成协议错误
 	// - 如果服务端收到一个包含保留标志位1的遗嘱消息的CONNECT报文且服务端不支持保留消息，服务端必须拒绝此连接请求
 	// - 从服务端接收到的保留可用标志为0时，客户端不能发送保留标志设置为1的PUBLISH报文 [MQTT-3.2.2-14]
-	RetainAvailable uint8
+	RetainAvailable RetainAvailable
 
 	// MaximumPacketSize 最大报文长度
 	// 属性标识符: 39 (0x27)
@@ -299,7 +298,7 @@ type ConnackProps struct {
 	// - 最大报文长度是MQTT控制报文的总长度
 	// - 客户端不能发送超过最大报文长度的报文给服务端 [MQTT-3.2.2-15]
 	// - 收到长度超过限制的报文将导致协议错误
-	MaximumPacketSize uint32
+	MaximumPacketSize MaximumPacketSize
 
 	// AssignedClientID 分配客户标识符
 	// 属性标识符: 18 (0x12)
@@ -311,7 +310,7 @@ type ConnackProps struct {
 	// - 服务端分配客户标识符的原因是CONNECT报文中的客户标识符长度为0
 	// - 如果客户端使用长度为0的客户标识符，服务端必须回复包含分配客户标识符的CONNACK报文
 	// - 分配客户标识符必须是没有被服务端的其他会话所使用的新客户标识符 [MQTT-3.2.2-16]
-	AssignedClientID string
+	AssignedClientID AssignedClientID
 
 	// TopicAliasMaximum 主题别名最大值
 	// 属性标识符: 34 (0x22)
@@ -326,7 +325,7 @@ type ConnackProps struct {
 	// - 客户端在一个PUBLISH报文中发送的主题别名值不能超过服务端设置的主题别名最大值 [MQTT-3.2.2-17]
 	// - 值为0表示本次连接服务端不接受任何主题别名
 	// - 如果主题别名最大值没有设置，或者设置为0，则客户端不能向此服务端发送任何主题别名 [MQTT-3.2.2-18]
-	TopicAliasMaximum uint16
+	TopicAliasMaximum TopicAliasMaximum
 
 	// ReasonString 原因字符串
 	// 属性标识符: 31 (0x1F)
@@ -340,7 +339,7 @@ type ConnackProps struct {
 	// - 包含多个原因字符串将造成协议错误
 	// 非规范评注:
 	// - 客户端对原因字符串的恰当使用包括：抛出异常时使用此字符串，或者将此字符串写入日志
-	ReasonString string
+	ReasonString ReasonString
 
 	// UserProperty 用户属性
 	// 属性标识符: 38 (0x26)
@@ -353,7 +352,7 @@ type ConnackProps struct {
 	// - 用户属性允许出现多次，以表示多个名字/值对，且相同的名字可以多次出现
 	// - 用户属性的内容和意义本规范不做定义
 	// - CONNACK报文的接收端可以选择忽略此属性
-	UserProperty map[string][]string
+	UserProperty UserProperty
 
 	// WildcardSubscriptionAvailable 通配符订阅可用
 	// 属性标识符: 40 (0x28)
@@ -365,7 +364,7 @@ type ConnackProps struct {
 	// - 包含多个通配符订阅可用属性，或通配符订阅可用属性值不为0也不为1将造成协议错误
 	// - 如果服务端在不支持通配符订阅的情况下收到了包含通配符订阅的SUBSCRIBE报文，将造成协议错误
 	// - 服务端在支持通配符订阅的情况下仍然可以拒绝特定的包含通配符订阅的订阅请求
-	WildcardSubscriptionAvailable uint8
+	WildcardSubscriptionAvailable WildcardSubscriptionAvailable
 
 	// SubscriptionIdentifierAvailable 订阅标识符可用
 	// 属性标识符: 41 (0x29)
@@ -376,7 +375,7 @@ type ConnackProps struct {
 	// 注意:
 	// - 包含多个订阅标识符可用属性，或订阅标识符可用属性值不为0也不为1将造成协议错误
 	// - 如果服务端在不支持订阅标识符的情况下收到了包含订阅标识符的SUBSCRIBE报文，将造成协议错误
-	SubscriptionIdentifierAvailable uint8
+	SubscriptionIdentifierAvailable SubscriptionIdentifierAvailable
 
 	// SharedSubscriptionAvailable 共享订阅可用
 	// 属性标识符: 42 (0x2A)
@@ -387,7 +386,7 @@ type ConnackProps struct {
 	// 注意:
 	// - 包含多个共享订阅可用，或共享订阅可用属性值不为0也不为1将造成协议错误
 	// - 如果服务端在不支持共享订阅的情况下收到了包含共享订阅的SUBSCRIBE报文，将造成协议错误
-	SharedSubscriptionAvailable uint8
+	SharedSubscriptionAvailable SharedSubscriptionAvailable
 
 	// ServerKeepAlive 服务端保持连接
 	// 属性标识符: 19 (0x13)
@@ -400,7 +399,7 @@ type ConnackProps struct {
 	// - 包含多个服务端保持连接属性将造成协议错误
 	// 非规范评注:
 	// - 服务端保持连接属性的主要作用是通知客户端它将会比客户端指定的保持连接更快的断开非活动的客户端
-	ServerKeepAlive uint16
+	ServerKeepAlive ServerKeepAlive
 
 	// ResponseInformation 响应信息
 	// 属性标识符: 26 (0x1A)
@@ -415,7 +414,7 @@ type ConnackProps struct {
 	// - 响应信息通常被用来传递主题订阅树的一个全局唯一分支，此分支至少在该客户端的会话生命周期内为该客户端所保留
 	// - 请求客户端和响应客户端的授权需要使用它，所以它通常不能仅仅是一个随机字符串
 	// - 一般把此分支作为特定客户端的订阅树根节点
-	ResponseInformation string
+	ResponseInformation ResponseInformation
 
 	// ServerReference 服务端参考
 	// 属性标识符: 28 (0x1C)
@@ -426,7 +425,7 @@ type ConnackProps struct {
 	// - 包含多个服务端参考将造成协议错误
 	// - 服务端在包含了原因码为0x9C（（临时）使用其他服务端）或0x9D（服务端已（永久）移动）的CONNACK报文或DISCONNECT报文中设置服务端参考
 	// - 关于如何使用服务端参考，请参考4.11节服务端重定向信息
-	ServerReference string
+	ServerReference ServerReference
 
 	// AuthenticationMethod 认证方法
 	// 属性标识符: 21 (0x15)
@@ -436,7 +435,7 @@ type ConnackProps struct {
 	// 注意:
 	// - 包含多个认证方法将造成协议错误
 	// - 更多关于扩展认证的信息，请参考4.12节
-	AuthenticationMethod string
+	AuthenticationMethod AuthenticationMethod
 
 	// AuthenticationData 认证数据
 	// 属性标识符: 22 (0x16)
@@ -447,7 +446,7 @@ type ConnackProps struct {
 	// - 此数据的内容由认证方法和已交换的认证数据状态定义
 	// - 包含多个认证数据将造成协议错误
 	// - 更多关于扩展认证的信息，请参考4.12节
-	AuthenticationData []byte
+	AuthenticationData AuthenticationData
 }
 
 // Pack 将CONNACK属性序列化为字节数组
@@ -457,225 +456,144 @@ type ConnackProps struct {
 func (props *ConnackProps) Pack() ([]byte, error) {
 	buf := GetBuffer()
 	defer PutBuffer(buf)
-	if props.SessionExpiryInterval != 0 {
-		buf.WriteByte(0x11)
-		buf.Write(i4b(props.SessionExpiryInterval))
+	if err := props.SessionExpiryInterval.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if props.ReceiveMaximum != 0 {
-		buf.WriteByte(0x21)
-		buf.Write(i2b(props.ReceiveMaximum))
+	if err := props.ReceiveMaximum.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if props.MaximumQoS != 0 {
-		buf.WriteByte(0x24)
-		buf.WriteByte(props.MaximumQoS)
+	if err := props.MaximumQoS.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if props.RetainAvailable != 0 {
-		buf.WriteByte(0x25)
-		buf.WriteByte(props.RetainAvailable)
+	if err := props.RetainAvailable.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if props.MaximumPacketSize != 0 {
-		buf.WriteByte(0x27)
-		buf.Write(i4b(props.MaximumPacketSize))
+	if err := props.MaximumPacketSize.Pack(buf); err != nil {
+		return nil, err
 	}
-	if props.AssignedClientID != "" {
-		buf.WriteByte(0x12)
-		buf.Write(encodeUTF8(props.AssignedClientID))
+	if err := props.TopicAliasMaximum.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if props.TopicAliasMaximum != 0 {
-		buf.WriteByte(0x22)
-		buf.Write(i2b(props.TopicAliasMaximum))
+	if err := props.ReasonString.Pack(buf); err != nil {
+		return nil, err
 	}
-	if props.ReasonString != "" {
-		buf.WriteByte(0x1F)
-		buf.Write(encodeUTF8(props.ReasonString))
+	if err := props.UserProperty.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if len(props.UserProperty) != 0 {
-		for k, v := range props.UserProperty {
-			for i := range v {
-				buf.WriteByte(0x26)
-				buf.Write(encodeUTF8(k))
-				buf.Write(encodeUTF8(v[i]))
-			}
-		}
+	if err := props.WildcardSubscriptionAvailable.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if props.WildcardSubscriptionAvailable != 0 {
-		buf.WriteByte(0x28)
-		buf.WriteByte(props.WildcardSubscriptionAvailable)
+	if err := props.SubscriptionIdentifierAvailable.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if props.SubscriptionIdentifierAvailable != 0 {
-		buf.WriteByte(0x29)
-		buf.WriteByte(props.SubscriptionIdentifierAvailable)
+	if err := props.SharedSubscriptionAvailable.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if props.SharedSubscriptionAvailable != 0 {
-		buf.WriteByte(0x2A)
-		buf.WriteByte(props.SharedSubscriptionAvailable)
+	if err := props.ServerKeepAlive.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if props.ServerKeepAlive != 0 {
-		buf.WriteByte(0x13)
-		buf.Write(i2b(props.ServerKeepAlive))
+	if err := props.ResponseInformation.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if len(props.ResponseInformation) != 0 {
-		buf.WriteByte(0x1A)
-		buf.Write(encodeUTF8(props.ResponseInformation))
+	if err := props.ServerReference.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if len(props.ServerReference) != 0 {
-		buf.WriteByte(0x1C)
-		buf.Write(encodeUTF8(props.ServerReference))
+	if err := props.AuthenticationMethod.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if len(props.AuthenticationMethod) != 0 {
-		buf.WriteByte(0x15)
-		buf.Write(encodeUTF8(props.AuthenticationMethod))
+	if err := props.AuthenticationData.Pack(buf); err != nil {
+		return nil, err
 	}
-
-	if len(props.AuthenticationData) != 0 {
-		buf.WriteByte(0x16)
-		buf.Write(encodeUTF8(props.AuthenticationData))
-	}
-
-	return buf.Bytes(), nil
-
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 // Unpack 从缓冲区解析CONNACK属性
 // 参考章节: 3.2.2.3 CONNACK Properties
-func (props *ConnackProps) Unpack(b *bytes.Buffer) error {
+func (props *ConnackProps) Unpack(buf *bytes.Buffer) error {
 	// 解析属性长度
-	propsLen, err := decodeLength(b)
+	propsLen, err := decodeLength(buf)
 	if err != nil {
 		return err
 	}
-
-	// 记录已处理的字节数，用于验证属性长度
-	processedBytes := uint32(0)
-
-	for processedBytes < propsLen {
-		propsId, err := decodeLength(b)
+	for i := uint32(0); i < propsLen; i++ {
+		propsId, err := decodeLength(buf)
 		if err != nil {
 			return err
 		}
+		uLen := uint32(0)
 		switch propsId {
 		case 0x11: // 会话过期间隔 Session Expiry Interval
-			if b.Len() < 4 {
-				return fmt.Errorf("insufficient data for Session Expiry Interval")
+			if uLen, err = props.SessionExpiryInterval.Unpack(buf); err != nil {
+				return err
 			}
-			props.SessionExpiryInterval = binary.BigEndian.Uint32(b.Next(4))
-			processedBytes += 4
-
-		case 0x21: // 接收最大值 Receive Maximum
-			if b.Len() < 2 {
-				return fmt.Errorf("insufficient data for Receive Maximum")
-			}
-			props.ReceiveMaximum = binary.BigEndian.Uint16(b.Next(2))
-			processedBytes += 2
-
-		case 0x24: // 最大服务质量 Maximum QoS
-			if b.Len() < 1 {
-				return fmt.Errorf("insufficient data for Maximum QoS")
-			}
-			props.MaximumQoS = b.Next(1)[0]
-			processedBytes += 1
-
-		case 0x25: // 保留可用 Retain Available
-			if b.Len() < 1 {
-				return fmt.Errorf("insufficient data for Retain Available")
-			}
-			props.RetainAvailable = b.Next(1)[0]
-			processedBytes += 1
-
-		case 0x27: // 最大报文长度 Maximum Packet Size
-			if b.Len() < 4 {
-				return fmt.Errorf("insufficient data for Maximum Packet Size")
-			}
-			props.MaximumPacketSize = binary.BigEndian.Uint32(b.Next(4))
-			processedBytes += 4
-
 		case 0x12: // 分配客户标识符 Assigned Client Identifier
-			clientID, _ := decodeUTF8[string](b)
-			props.AssignedClientID = clientID
-			processedBytes += uint32(len(encodeUTF8(clientID)))
-
-		case 0x22: // 主题别名最大值 Topic Alias Maximum
-			if b.Len() < 2 {
-				return fmt.Errorf("insufficient data for Topic Alias Maximum")
+			if uLen, err = props.AssignedClientID.Unpack(buf); err != nil {
+				return err
 			}
-			props.TopicAliasMaximum = binary.BigEndian.Uint16(b.Next(2))
-			processedBytes += 2
-
-		case 0x1F: // 原因字符串 Reason String
-			reasonStr, _ := decodeUTF8[string](b)
-			props.ReasonString = reasonStr
-			processedBytes += uint32(len(encodeUTF8(reasonStr)))
-
-		case 0x26: // 用户属性 User Property
-			if props.UserProperty == nil {
-				props.UserProperty = make(map[string][]string)
-			}
-			key, _ := decodeUTF8[string](b)
-			value, _ := decodeUTF8[string](b)
-			props.UserProperty[key] = append(props.UserProperty[key], value)
-			processedBytes += uint32(len(encodeUTF8(key)) + len(encodeUTF8(value)))
-
-		case 0x28: // 通配符订阅可用 Wildcard Subscription Available
-			if b.Len() < 1 {
-				return fmt.Errorf("insufficient data for Wildcard Subscription Available")
-			}
-			props.WildcardSubscriptionAvailable = b.Next(1)[0]
-			processedBytes += 1
-
-		case 0x29: // 订阅标识符可用 Subscription Identifier Available
-			if b.Len() < 1 {
-				return fmt.Errorf("insufficient data for Subscription Identifier Available")
-			}
-			props.SubscriptionIdentifierAvailable = b.Next(1)[0]
-			processedBytes += 1
-
-		case 0x2A: // 共享订阅可用 Shared Subscription Available
-			if b.Len() < 1 {
-				return fmt.Errorf("insufficient data for Shared Subscription Available")
-			}
-			props.SharedSubscriptionAvailable = b.Next(1)[0]
-			processedBytes += 1
-
 		case 0x13: // 服务端保持连接 Server Keep Alive
-			if b.Len() < 2 {
-				return fmt.Errorf("insufficient data for Server Keep Alive")
+			if uLen, err = props.ServerKeepAlive.Unpack(buf); err != nil {
+				return err
 			}
-			props.ServerKeepAlive = binary.BigEndian.Uint16(b.Next(2))
-			processedBytes += 2
-
-		case 0x1A: // 响应信息 Response Information
-			responseInfo, _ := decodeUTF8[string](b)
-			props.ResponseInformation = responseInfo
-			processedBytes += uint32(len(encodeUTF8(responseInfo)))
-
-		case 0x1C: // 服务端参考 Server Reference
-			serverRef, _ := decodeUTF8[string](b)
-			props.ServerReference = serverRef
-			processedBytes += uint32(len(encodeUTF8(serverRef)))
-
 		case 0x15: // 认证方法 Authentication Method
-			authMethod, _ := decodeUTF8[string](b)
-			props.AuthenticationMethod = authMethod
-			processedBytes += uint32(len(encodeUTF8(authMethod)))
-
+			if uLen, err = props.AuthenticationMethod.Unpack(buf); err != nil {
+				return err
+			}
 		case 0x16: // 认证数据 Authentication Data
-			authData, _ := decodeUTF8[[]byte](b)
-			props.AuthenticationData = authData
-			processedBytes += uint32(len(encodeUTF8(authData)))
+			if uLen, err = props.AuthenticationData.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x1A: // 响应信息 Response Information
+			if uLen, err = props.ResponseInformation.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x1C: // 服务端参考 Server Reference
+			if uLen, err = props.ServerReference.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x1F: // 原因字符串 Reason String
+			if uLen, err = props.ReasonString.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x21: // 接收最大值 Receive Maximum
+			if uLen, err = props.ReceiveMaximum.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x22: // 主题别名最大值 Topic Alias Maximum
+			if uLen, err = props.TopicAliasMaximum.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x24: // 最大服务质量 Maximum QoS
+			if uLen, err = props.MaximumQoS.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x25: // 保留可用 Retain Available
+			if uLen, err = props.RetainAvailable.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x26: // 用户属性 User Property
+			if uLen, err = props.UserProperty.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x27: // 最大报文长度 Maximum Packet Size
+			if uLen, err = props.MaximumPacketSize.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x28: // 通配符订阅可用 Wildcard Subscription Available
+			if uLen, err = props.WildcardSubscriptionAvailable.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x29: // 订阅标识符可用 Subscription Identifier Available
+			if uLen, err = props.SubscriptionIdentifierAvailable.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x2A: // 共享订阅可用 Shared Subscription Available
+			if uLen, err = props.SharedSubscriptionAvailable.Unpack(buf); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unknown property id: %d", propsId)
 		}
+		i += uLen
 	}
 	return nil
 }

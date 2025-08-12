@@ -3,7 +3,6 @@ package packet
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
 )
 
@@ -143,7 +142,7 @@ type PubrecProperties struct {
 	// - 相同的名字可以出现多次
 	// - 本规范不做定义，由应用程序确定含义和解释
 	// - 可用于传递发布收到相关的额外信息
-	UserProperty map[string][]string
+	UserProperty UserProperty
 }
 
 func (props *PubrecProperties) Pack() ([]byte, error) {
@@ -164,7 +163,7 @@ func (props *PubrecProperties) Pack() ([]byte, error) {
 			}
 		}
 	}
-	return buf.Bytes(), nil
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 func (props *PubrecProperties) Unpack(buf *bytes.Buffer) error {
@@ -185,16 +184,9 @@ func (props *PubrecProperties) Unpack(buf *bytes.Buffer) error {
 				return err
 			}
 		case 0x26:
-			if props.UserProperty == nil {
-				props.UserProperty = make(map[string][]string)
+			if uLen, err = props.UserProperty.Unpack(buf); err != nil {
+				return err
 			}
-
-			userProperty := &UserProperty{}
-			uLen, err = userProperty.Unpack(buf)
-			if err != nil {
-				return fmt.Errorf("failed to unpack user property: %w", err)
-			}
-			props.UserProperty[userProperty.Name] = append(props.UserProperty[userProperty.Name], userProperty.Value)
 		}
 		i += uLen
 	}

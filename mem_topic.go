@@ -42,7 +42,7 @@ func (m *MemorySubscribed) Unsubscribe(c *conn) {
 }
 
 // Publish 发布消息，如果是新topic需要额外处理存量connect订阅列表的构建
-func (m *MemorySubscribed) Publish(message *packet.Message) error {
+func (m *MemorySubscribed) Publish(message *packet.Message, props *packet.PublishProperties) error {
 	m.mu.RLock()
 	sub, ok := m.maps[message.TopicName]
 	m.mu.RUnlock()
@@ -57,7 +57,7 @@ func (m *MemorySubscribed) Publish(message *packet.Message) error {
 		m.maps[message.TopicName] = sub
 		m.mu.Unlock()
 	}
-	return sub.Exchange(message)
+	return sub.Exchange(message, props)
 }
 
 func NewMemorySubscribed(s *Server) *MemorySubscribed {
@@ -131,22 +131,20 @@ func (s *TopicSubscribed) Unsubscribe(c *conn) int {
 	return len(s.activeConn)
 }
 
-func (s *TopicSubscribed) Exchange(message *packet.Message) error {
+func (s *TopicSubscribed) Exchange(message *packet.Message, props *packet.PublishProperties) error {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
 	group, _ := errgroup.WithContext(context.Background())
 	for c := range s.activeConn {
 		response := &response{conn: c}
 		group.Go(func() error {
-			newPub := &packet.PUBLISH{
-				FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBLISH, Dup: 0, QoS: 0, Retain: 0},
-				Message:     message,
+			pub := &packet.PUBLISH{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBLISH, Dup: 0, QoS: 1, Retain: 0}, Message: message, Props: props}
+			log.Printf("publish: topic=%s, qos=%d, retain=%d, message=%s, props=%v", message.TopicName, pub.QoS, pub.Retain, message.Content, props)
+			if pub.QoS > 0 {
+				pub.PacketID = c.PacketID + 1
+				c.PacketID = pub.PacketID
 			}
-			if newPub.QoS > 0 {
-				newPub.PacketID = c.PacketID + 1
-				c.PacketID = newPub.PacketID
-			}
-			return response.OnSend(newPub)
+			return response.OnSend(pub)
 		})
 	}
 	return group.Wait()

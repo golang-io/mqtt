@@ -132,7 +132,7 @@ func (c *conn) serve(ctx context.Context) {
 		if c.willTopic == "" || c.willPayload == nil {
 			return
 		}
-		_ = c.server.memorySubscribed.Publish(&packet.Message{TopicName: c.willTopic, Content: c.willPayload})
+		_ = c.server.memorySubscribed.Publish(&packet.Message{TopicName: c.willTopic, Content: c.willPayload}, nil)
 	}()
 	// TODO: TLS handle
 	if tlsConn, ok := c.rwc.(*tls.Conn); ok {
@@ -187,9 +187,6 @@ func (c *conn) readRequest(_ context.Context) (*response, error) {
 	w.packet, err = packet.Unpack(c.version, c.rwc)
 	stat.PacketReceived.Inc()
 	if err != nil && !errors.Is(err, io.EOF) {
-		buf := make([]byte, 1024)
-		runtime.Stack(buf, true)
-		pktLog.Printf("recv|%s - %s, err=%v, stack=%s", Kind[w.packet.Kind()], c.ID, err, buf)
 		return nil, fmt.Errorf("makeRequest: err=%w", err)
 	}
 	//pktLog.Printf("recv|%s - %s", Kind[w.packet.Kind()], c.ID)
@@ -234,16 +231,12 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 	case *packet.PUBLISH:
 		switch rpkt.QoS {
 		case 0:
-			_ = c.server.memorySubscribed.Publish(rpkt.Message)
+			_ = c.server.memorySubscribed.Publish(rpkt.Message, rpkt.Props)
 			return
 		case 1:
-			_ = c.server.memorySubscribed.Publish(rpkt.Message)
+			_ = c.server.memorySubscribed.Publish(rpkt.Message, rpkt.Props)
 			spkt = &packet.PUBACK{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBACK}, PacketID: rpkt.PacketID}
 		case 2:
-			// client    -----PUBLISH[QoS2]-----> server
-			// client    <----PUBREC------------- server
-			// client    -----PUBREL------------> server
-			// client    <----PUBCOMP------------ server
 			c.inFight.Put(rpkt)
 			spkt = &packet.PUBREC{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBREC}, PacketID: rpkt.PacketID}
 		}
@@ -256,8 +249,15 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 		if !ok {
 			panic("inFight not found packetID")
 		}
-		_ = c.server.memorySubscribed.Publish(pub.Message)
-		spkt = &packet.PUBCOMP{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBCOMP}, PacketID: rpkt.PacketID}
+		err := c.server.memorySubscribed.Publish(pub.Message, pub.Props)
+		if err != nil {
+			log.Printf("publish err: err=%v", err)
+		}
+		spkt = &packet.PUBCOMP{
+			FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBCOMP},
+			PacketID:    rpkt.PacketID,
+			ReasonCode:  packet.ReasonCode{Code: 0},
+		}
 	case *packet.PUBCOMP:
 		return
 	case *packet.SUBSCRIBE:

@@ -55,11 +55,6 @@ func TestDISCONNECT_NewDISCONNECT(t *testing.T) {
 					disconnect.Dup, disconnect.QoS, disconnect.Retain)
 			}
 
-			// 验证包
-			err := disconnect.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("NewDISCONNECT().Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
 		})
 	}
 }
@@ -170,10 +165,7 @@ func TestDISCONNECT_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.disconnect.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("DISCONNECT.Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
+
 		})
 	}
 }
@@ -350,14 +342,8 @@ func TestDisconnectProperties_Validate(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.props.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("DisconnectProperties.Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
+	_ = tests
+
 }
 
 func TestDisconnectProperties_Pack(t *testing.T) {

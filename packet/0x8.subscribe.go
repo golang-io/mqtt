@@ -94,56 +94,15 @@ func (pkt *SUBSCRIBE) Unpack(buf *bytes.Buffer) error {
 	if pkt.Dup != 0x0 || pkt.QoS != 0x1 || pkt.Retain != 0x0 {
 		return ErrMalformedFlags
 	}
-
-	// 调试信息：检查缓冲区长度
-	if buf.Len() < 2 {
-		return fmt.Errorf("buffer too short for packet ID: %d bytes", buf.Len())
-	}
-
 	pkt.PacketID = binary.BigEndian.Uint16(buf.Next(2))
-
-	//
 	if pkt.Version == VERSION500 {
-		// 检查是否有属性数据
-		if buf.Len() > 0 {
-			// 先读取属性长度
-			propsLen, err := decodeLength(buf)
-			if err != nil {
-				return err
-			}
-
-			// 如果有属性数据，则解析属性
-			if propsLen > 0 {
-				pkt.Props = &SubscribeProperties{}
-				if err := pkt.Props.Unpack(buf); err != nil {
-					return err
-				}
-			}
+		if err := pkt.Props.Unpack(buf); err != nil {
+			return fmt.Errorf("pkt.RemainingLength=%v err=%w", pkt.RemainingLength, err)
 		}
 	}
-
 	for buf.Len() != 0 {
 		subscription := Subscription{}
-
-		// 检查是否有足够的字节来读取主题长度
-		if buf.Len() < 2 {
-			return fmt.Errorf("insufficient bytes for topic length: %d", buf.Len())
-		}
-
-		topicLength := int(binary.BigEndian.Uint16(buf.Next(2))) // topic length
-
-		// 检查是否有足够的字节来读取主题内容
-		if buf.Len() < topicLength {
-			return fmt.Errorf("insufficient bytes for topic content: need %d, have %d", topicLength, buf.Len())
-		}
-
-		subscription.TopicFilter = string(buf.Next(topicLength))
-
-		// 检查是否有足够的字节来读取订阅选项
-		if buf.Len() < 1 {
-			return fmt.Errorf("insufficient bytes for subscription options: %d", buf.Len())
-		}
-
+		subscription.TopicFilter, _ = decodeUTF8[string](buf)
 		options := buf.Next(1)[0]
 		subscription.MaximumQoS = options & 0b00000011
 		if subscription.MaximumQoS > 0x02 {
@@ -238,7 +197,7 @@ type SubscribeProperties struct {
 	// 类型: 变长字节整数
 	// 含义: 标识订阅的数值，用于标识消息应该发送给哪个订阅
 	// 注意: 包含多个订阅标识符将造成协议错误
-	SubscriptionIdentifier uint32
+	SubscriptionIdentifier SubscriptionIdentifier
 
 	// UserProperty 用户属性
 	// 属性标识符: 38 (0x26)
@@ -246,7 +205,7 @@ type SubscribeProperties struct {
 	// 类型: UTF-8字符串对
 	// 含义: 用户定义的名称/值对，可以出现多次
 	// 注意: 用户属性可以出现多次，表示多个名字/值对
-	UserProperty map[string][]string
+	UserProperty UserProperty
 }
 
 func (props *SubscribeProperties) Pack() ([]byte, error) {
@@ -261,17 +220,11 @@ func (props *SubscribeProperties) Pack() ([]byte, error) {
 		}
 		buf.Write(vb)
 	}
-
-	if len(props.UserProperty) != 0 {
-		for k, v := range props.UserProperty {
-			for i := range v {
-				buf.WriteByte(0x26)
-				buf.Write(encodeUTF8(k))
-				buf.Write(encodeUTF8(v[i]))
-			}
-		}
+	if err := props.UserProperty.Pack(buf); err != nil {
+		return nil, err
 	}
-	return buf.Bytes(), nil
+
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 func (props *SubscribeProperties) Unpack(buf *bytes.Buffer) error {
@@ -287,22 +240,13 @@ func (props *SubscribeProperties) Unpack(buf *bytes.Buffer) error {
 		uLen := uint32(0)
 		switch propsCode {
 		case 0x0B:
-			if props.SubscriptionIdentifier, err = decodeLength(buf); err != nil {
+			if uLen, err = props.SubscriptionIdentifier.Unpack(buf); err != nil {
 				return err
 			}
-			vb, _ := encodeLength(props.SubscriptionIdentifier)
-			uLen = uint32(len(vb)) // 用来计算动态数字的占位
 		case 0x26:
-			if props.UserProperty == nil {
-				props.UserProperty = make(map[string][]string)
+			if uLen, err = props.UserProperty.Unpack(buf); err != nil {
+				return err
 			}
-
-			userProperty := &UserProperty{}
-			uLen, err = userProperty.Unpack(buf)
-			if err != nil {
-				return fmt.Errorf("failed to unpack user property: %w", err)
-			}
-			props.UserProperty[userProperty.Name] = append(props.UserProperty[userProperty.Name], userProperty.Value)
 		default:
 			return ErrProtocolViolation
 		}

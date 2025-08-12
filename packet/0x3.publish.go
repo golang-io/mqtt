@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -337,7 +338,7 @@ func (pkt *PUBLISH) Unpack(buf *bytes.Buffer) error {
 	// 2. 如果直接赋值 pkt.Message.Content = buf.Bytes()，两者会共享同一个底层数组
 	// 3. 当缓冲区被复用或修改时，pkt.Message.Content 也会被意外修改
 	// 4. append([]byte{}, ...) 创建全新的底层数组，确保数据独立性
-	pkt.Message.Content = append([]byte{}, buf.Bytes()...)
+	pkt.Message.Content = slices.Clone(buf.Bytes())
 	return nil
 }
 
@@ -432,7 +433,7 @@ type PublishProperties struct {
 	// 类型: UTF-8字符串对
 	// 含义: 用户定义的名称/值对，可以出现多次
 	// 注意: 用户属性可以出现多次，表示多个名字/值对
-	UserProperty map[string][]string
+	UserProperty UserProperty
 
 	// SubscriptionIdentifier 订阅标识符
 	// 属性标识符: 11 (0x0B)
@@ -458,64 +459,47 @@ func (props *PublishProperties) Unpack(buf *bytes.Buffer) error {
 		return err
 	}
 
-	// 记录已处理的字节数
-	uLen := uint32(0)
-
 	// 解析各个属性
 	for i := uint32(0); i < propsLen; i++ {
-		// 读取属性标识符
 		propsId, err := decodeLength(buf)
 		if err != nil {
 			return err
 		}
+		uLen := uint32(0)
 		switch propsId {
 		case 0x01: // Payload Format Indicator
-
 			if uLen, err = props.PayloadFormatIndicator.Unpack(buf); err != nil {
 				return fmt.Errorf("failed to unpack PayloadFormatIndicator: %w", err)
 			}
-
 		case 0x02: // Message Expiry Interval
 			if uLen, err = props.MessageExpiryInterval.Unpack(buf); err != nil {
 				return fmt.Errorf("failed to unpack MessageExpiryInterval: %w", err)
 			}
-
-		case 0x23: // Topic Alias
-			if uLen, err = props.TopicAlias.Unpack(buf); err != nil {
-				return fmt.Errorf("failed to unpack TopicAlias: %w", err)
+		case 0x03: // Content Type
+			if uLen, err = props.ContentType.Unpack(buf); err != nil {
+				return fmt.Errorf("failed to unpack ContentType: %w", err)
 			}
-
 		case 0x08: // Response Topic
 			if uLen, err = props.ResponseTopic.Unpack(buf); err != nil {
 				return fmt.Errorf("failed to unpack ResponseTopic: %w", err)
 			}
-
 		case 0x09: // Correlation Data
 			if uLen, err = props.CorrelationData.Unpack(buf); err != nil {
 				return fmt.Errorf("failed to unpack CorrelationData: %w", err)
 			}
-
-		case 0x26: // User Property
-			if props.UserProperty == nil {
-				props.UserProperty = make(map[string][]string)
-			}
-
-			userProperty := &UserProperty{}
-			if uLen, err = userProperty.Unpack(buf); err != nil {
-				return fmt.Errorf("failed to unpack UserProperty: %w", err)
-			}
-			props.UserProperty[userProperty.Name] = append(props.UserProperty[userProperty.Name], userProperty.Value)
-
 		case 0x0B: // Subscription Identifier
 			var subscriptionIdentifier SubscriptionIdentifier
 			if uLen, err = subscriptionIdentifier.Unpack(buf); err != nil {
 				return fmt.Errorf("failed to unpack SubscriptionIdentifier: %w", err)
 			}
 			props.SubscriptionIdentifier = append(props.SubscriptionIdentifier, subscriptionIdentifier.Uint32())
-
-		case 0x03: // Content Type
-			if uLen, err = props.ContentType.Unpack(buf); err != nil {
-				return fmt.Errorf("failed to unpack ContentType: %w", err)
+		case 0x23: // Topic Alias
+			if uLen, err = props.TopicAlias.Unpack(buf); err != nil {
+				return fmt.Errorf("failed to unpack TopicAlias: %w", err)
+			}
+		case 0x26: // User Property
+			if uLen, err = props.UserProperty.Unpack(buf); err != nil {
+				return err
 			}
 		default:
 			// 跳过未知属性
@@ -551,12 +535,8 @@ func (props *PublishProperties) Pack() ([]byte, error) {
 		return nil, err
 	}
 
-	for k, values := range props.UserProperty {
-		for i := range values {
-			if err := (&UserProperty{Name: k, Value: values[i]}).Pack(buf); err != nil {
-				return nil, err
-			}
-		}
+	if err := props.UserProperty.Pack(buf); err != nil {
+		return nil, err
 	}
 
 	if len(props.SubscriptionIdentifier) != 0 {
@@ -573,6 +553,5 @@ func (props *PublishProperties) Pack() ([]byte, error) {
 	if err := props.ContentType.Pack(buf); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
-
+	return bytes.Clone(buf.Bytes()), nil
 }

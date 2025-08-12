@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/golang-io/requests"
 )
@@ -735,7 +734,7 @@ type ConnectProperties struct {
 	// - 用户属性可以出现多次，表示多个名字/值对
 	// - 相同的名字可以出现多次
 	// - 本规范不做定义，由应用程序确定含义和解释
-	UserProperty map[string][]string
+	UserProperty UserProperty
 
 	// AuthenticationMethod 认证方法
 	// 属性标识符: 21 (0x15)
@@ -765,42 +764,42 @@ func (props *ConnectProperties) Pack() ([]byte, error) {
 	buf := GetBuffer()
 	defer PutBuffer(buf)
 
-	if props.SessionExpiryInterval != 0 {
-		props.SessionExpiryInterval.Pack(buf)
-	}
-	if props.ReceiveMaximum != 0 {
-		props.ReceiveMaximum.Pack(buf)
-	}
-	if props.MaximumPacketSize != 0 {
-		props.MaximumPacketSize.Pack(buf)
+	if err := props.SessionExpiryInterval.Pack(buf); err != nil {
+		return nil, err
 	}
 
-	if props.TopicAliasMaximum != 0 {
-		props.TopicAliasMaximum.Pack(buf)
+	if err := props.ReceiveMaximum.Pack(buf); err != nil {
+		return nil, err
 	}
-	if props.RequestResponseInformation != 0 {
-		props.RequestResponseInformation.Pack(buf)
+
+	if err := props.MaximumPacketSize.Pack(buf); err != nil {
+		return nil, err
 	}
-	if props.RequestProblemInformation != 0 {
-		props.RequestProblemInformation.Pack(buf)
+
+	if err := props.TopicAliasMaximum.Pack(buf); err != nil {
+		return nil, err
 	}
-	if len(props.UserProperty) != 0 {
-		for k, v := range props.UserProperty {
-			for i := range v {
-				buf.WriteByte(0x26)
-				buf.Write(encodeUTF8(k))
-				buf.Write(encodeUTF8(v[i]))
-			}
-		}
+
+	if err := props.RequestResponseInformation.Pack(buf); err != nil {
+		return nil, err
 	}
-	if props.AuthenticationMethod != "" {
-		props.AuthenticationMethod.Pack(buf)
+
+	if err := props.RequestProblemInformation.Pack(buf); err != nil {
+		return nil, err
 	}
-	if props.AuthenticationData != nil {
-		buf.WriteByte(0x16)
-		buf.Write(encodeUTF8(props.AuthenticationData))
+
+	if err := props.UserProperty.Pack(buf); err != nil {
+		return nil, err
 	}
-	return buf.Bytes(), nil
+
+	if err := props.AuthenticationMethod.Pack(buf); err != nil {
+		return nil, err
+	}
+
+	if err := props.AuthenticationData.Pack(buf); err != nil {
+		return nil, err
+	}
+	return bytes.Clone(buf.Bytes()), nil
 
 }
 
@@ -809,7 +808,6 @@ func (props *ConnectProperties) Unpack(buf *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("connect props unpack: propsLen=%d", propsLen)
 	for i := uint32(0); i < propsLen; i++ {
 		propsCode, err := decodeLength(buf)
 		if err != nil {
@@ -818,90 +816,45 @@ func (props *ConnectProperties) Unpack(buf *bytes.Buffer) error {
 		uLen := uint32(0)
 		switch propsCode {
 		case 0x11:
-			uLen, err = props.SessionExpiryInterval.Unpack(buf)
-			if err != nil {
+			if uLen, err = props.SessionExpiryInterval.Unpack(buf); err != nil {
 				return err
 			}
 
-		case 0x21:
-			// 包含多个接收最大值将造成协议错误
-			if props.ReceiveMaximum != 0 {
-				return ErrProtocolErr
-			}
-			uLen, err = props.ReceiveMaximum.Unpack(buf)
-			if err != nil {
-				return err
-			}
-			// 接收最大值为 0 将造成协议错误
-			if props.ReceiveMaximum == 0 {
-				return ErrProtocolErr
-			}
-		case 0x27:
-			if props.MaximumPacketSize != 0 {
-				return ErrProtocolErr
-			}
-			uLen, err = props.MaximumPacketSize.Unpack(buf)
-			if err != nil {
-				return err
-			}
-			if props.MaximumPacketSize == 0 {
-				return ErrProtocolErr
-			}
-		case 0x22:
-			if props.TopicAliasMaximum != 0 {
-				return ErrProtocolErr
-			}
-			uLen, err = props.TopicAliasMaximum.Unpack(buf)
-			if err != nil {
-				return err
-			}
-			if props.TopicAliasMaximum == 0 {
-				return ErrProtocolErr
-			}
-		case 0x19: // 请求响应信息 Request Response Information
-			uLen, err = props.RequestResponseInformation.Unpack(buf)
-			if err != nil {
-				return err
-			}
-			// 验证值只能是0或1
-			if props.RequestResponseInformation != 0 && props.RequestResponseInformation != 1 {
-				return ErrProtocolErr
-			}
-
-		case 0x17: // 请求问题信息 Request Problem Information
-			uLen, err = props.RequestProblemInformation.Unpack(buf)
-			if err != nil {
-				return err
-			}
-			// 验证值只能是0或1
-			if props.RequestProblemInformation != 0 && props.RequestProblemInformation != 1 {
-				return ErrProtocolErr
-			}
-
-		case 0x26:
-			if props.UserProperty == nil {
-				props.UserProperty = make(map[string][]string)
-			}
-
-			userProperty := &UserProperty{}
-			uLen, err = userProperty.Unpack(buf)
-			if err != nil {
-				return fmt.Errorf("failed to unpack user property: %w", err)
-			}
-			props.UserProperty[userProperty.Name] = append(props.UserProperty[userProperty.Name], userProperty.Value)
 		case 0x15:
-			uLen, err = props.AuthenticationMethod.Unpack(buf)
-			if err != nil {
+			if uLen, err = props.AuthenticationMethod.Unpack(buf); err != nil {
 				return err
 			}
 		case 0x16:
-			// 读取认证数据长度和内容
-			uLen, err = props.AuthenticationData.Unpack(buf)
-			if err != nil {
+			if uLen, err = props.AuthenticationData.Unpack(buf); err != nil {
 				return fmt.Errorf("failed to unpack AuthenticationData: %w", err)
 			}
+		case 0x17: // 请求问题信息 Request Problem Information
+			if uLen, err = props.RequestProblemInformation.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x19: // 请求响应信息 Request Response Information
+			if uLen, err = props.RequestResponseInformation.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x21:
+
+			if uLen, err = props.ReceiveMaximum.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x22:
+			if uLen, err = props.TopicAliasMaximum.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x26:
+			if uLen, err = props.UserProperty.Unpack(buf); err != nil {
+				return err
+			}
+		case 0x27:
+			if uLen, err = props.MaximumPacketSize.Unpack(buf); err != nil {
+				return err
+			}
 		default:
-			return ErrMalformedProperties
+			return fmt.Errorf("unknown property identifier: 0x%02X", propsCode)
 		}
 		i += uLen
 	}

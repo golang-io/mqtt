@@ -154,46 +154,46 @@ func (s RequestProblemInformation) Uint8() uint8 {
 	return uint8(s)
 }
 
-// UserProperty 用户属性 (0x26)
-type UserProperty struct {
-	Name  string
-	Value string
-}
+type UserProperty map[string][]string
 
-func (s UserProperty) Pack(buf *bytes.Buffer) error {
-	if s.Name == "" || s.Value == "" {
-		return nil
+func (up UserProperty) Pack(buf *bytes.Buffer) error {
+	for k, values := range up {
+		for i := range values {
+			if k == "" || values[i] == "" {
+				return nil
+			}
+			buf.WriteByte(0x26)
+			buf.Write(i2b(uint16(len(k))))
+			buf.Write([]byte(k))
+			buf.Write(i2b(uint16(len(values[i]))))
+			buf.Write([]byte(values[i]))
+		}
 	}
-	buf.WriteByte(0x26)
-	// 写入名称长度和名称
-	nameBytes := []byte(s.Name)
-	buf.Write(i2b(uint16(len(nameBytes))))
-	buf.Write(nameBytes)
-	// 写入值长度和值
-	valueBytes := []byte(s.Value)
-	buf.Write(i2b(uint16(len(valueBytes))))
-	buf.Write(valueBytes)
 	return nil
 }
 
-func (s *UserProperty) Unpack(buf *bytes.Buffer) (uint32, error) {
-	propsLen, uLen := uint32(4), uint32(0) // 名称长度(2) + 值长度(2)
-	s.Name, uLen = decodeUTF8[string](buf)
-	propsLen += uLen //  名称
-	s.Value, uLen = decodeUTF8[string](buf)
-	propsLen += uLen //  值
+func (up *UserProperty) Unpack(buf *bytes.Buffer) (uint32, error) {
+	if *up == nil {
+		*up = make(map[string][]string)
+	}
+	propsLen := uint32(4) // 名称长度(2) + 值长度(2)
+	name, uLen1 := decodeUTF8[string](buf)
+	propsLen += uLen1 //  名称
+	value, uLen2 := decodeUTF8[string](buf)
+	propsLen += uLen2 //  值
+	(*up)[name] = append((*up)[name], value)
 	return propsLen, nil
 }
 
 // AuthenticationMethod 认证方法 (0x15)
 type AuthenticationMethod string
 
-func (s *AuthenticationMethod) Pack(buf *bytes.Buffer) error {
-	if s == nil || *s == "" {
+func (s AuthenticationMethod) Pack(buf *bytes.Buffer) error {
+	if s == "" {
 		return nil
 	}
 	buf.WriteByte(0x15)
-	buf.Write(encodeUTF8(*s))
+	buf.Write(encodeUTF8(s))
 	return nil
 }
 
@@ -211,9 +211,9 @@ func (s AuthenticationMethod) String() string {
 // AuthenticationData 认证数据 (0x16)
 type AuthenticationData []byte
 
-func (s *AuthenticationData) Pack(buf *bytes.Buffer) error {
+func (s AuthenticationData) Pack(buf *bytes.Buffer) error {
 	buf.WriteByte(0x16)
-	buf.Write(encodeUTF8(*s))
+	buf.Write(encodeUTF8(s))
 	return nil
 }
 
@@ -231,9 +231,9 @@ func (s AuthenticationData) Bytes() []byte {
 // MaximumQoS 最大服务质量 (0x24)
 type MaximumQoS uint8
 
-func (s *MaximumQoS) Pack(buf *bytes.Buffer) error {
+func (s MaximumQoS) Pack(buf *bytes.Buffer) error {
 	buf.WriteByte(0x24)
-	buf.WriteByte(uint8(*s))
+	buf.WriteByte(uint8(s))
 	return nil
 }
 
@@ -254,9 +254,9 @@ func (s MaximumQoS) Uint8() uint8 {
 // RetainAvailable 保留消息可用性 (0x25)
 type RetainAvailable uint8
 
-func (s *RetainAvailable) Pack(buf *bytes.Buffer) error {
+func (s RetainAvailable) Pack(buf *bytes.Buffer) error {
 	buf.WriteByte(0x25)
-	buf.WriteByte(uint8(*s))
+	buf.WriteByte(uint8(s))
 	return nil
 }
 
@@ -277,9 +277,9 @@ func (s RetainAvailable) Uint8() uint8 {
 // AssignedClientIdentifier 分配的客户端标识符 (0x12)
 type AssignedClientIdentifier string
 
-func (s *AssignedClientIdentifier) Pack(buf *bytes.Buffer) error {
+func (s AssignedClientIdentifier) Pack(buf *bytes.Buffer) error {
 	buf.WriteByte(0x12)
-	buf.Write(encodeUTF8(*s))
+	buf.Write(encodeUTF8(s))
 	return nil
 }
 
@@ -297,12 +297,12 @@ func (s AssignedClientIdentifier) String() string {
 // ReasonString 原因字符串 (0x1F)
 type ReasonString string
 
-func (s *ReasonString) Pack(buf *bytes.Buffer) error {
-	if s == nil || *s == "" {
+func (s ReasonString) Pack(buf *bytes.Buffer) error {
+	if s == "" {
 		return nil
 	}
 	buf.WriteByte(0x1F)
-	buf.Write(encodeUTF8(*s))
+	buf.Write(encodeUTF8(s))
 	return nil
 }
 
@@ -320,9 +320,9 @@ func (s ReasonString) String() string {
 // WildcardSubscriptionAvailable 通配符订阅可用性 (0x28)
 type WildcardSubscriptionAvailable uint8
 
-func (s *WildcardSubscriptionAvailable) Pack(buf *bytes.Buffer) error {
+func (s WildcardSubscriptionAvailable) Pack(buf *bytes.Buffer) error {
 	buf.WriteByte(0x28)
-	buf.WriteByte(uint8(*s))
+	buf.WriteByte(uint8(s))
 	return nil
 }
 
@@ -341,34 +341,34 @@ func (s WildcardSubscriptionAvailable) Uint8() uint8 {
 }
 
 // SubscriptionIdentifiersAvailable 订阅标识符可用性 (0x29)
-type SubscriptionIdentifiersAvailable uint8
+type SubscriptionIdentifierAvailable uint8
 
-func (s *SubscriptionIdentifiersAvailable) Pack(buf *bytes.Buffer) error {
+func (s SubscriptionIdentifierAvailable) Pack(buf *bytes.Buffer) error {
 	buf.WriteByte(0x29)
-	buf.WriteByte(uint8(*s))
+	buf.WriteByte(uint8(s))
 	return nil
 }
 
-func (s *SubscriptionIdentifiersAvailable) Unpack(buf *bytes.Buffer) (uint32, error) {
+func (s *SubscriptionIdentifierAvailable) Unpack(buf *bytes.Buffer) (uint32, error) {
 	value := buf.Next(1)
 	if len(value) != 1 {
 		return 0, fmt.Errorf("%w: invalid subscription identifiers available", ErrProtocolErr)
 	}
-	*s = SubscriptionIdentifiersAvailable(value[0])
+	*s = SubscriptionIdentifierAvailable(value[0])
 	return uint32(1), nil
 }
 
 // 添加类型转换方法以保持兼容性
-func (s SubscriptionIdentifiersAvailable) Uint8() uint8 {
+func (s SubscriptionIdentifierAvailable) Uint8() uint8 {
 	return uint8(s)
 }
 
 // SharedSubscriptionAvailable 共享订阅可用性 (0x2A)
 type SharedSubscriptionAvailable uint8
 
-func (s *SharedSubscriptionAvailable) Pack(buf *bytes.Buffer) error {
+func (s SharedSubscriptionAvailable) Pack(buf *bytes.Buffer) error {
 	buf.WriteByte(0x2A)
-	buf.WriteByte(uint8(*s))
+	buf.WriteByte(uint8(s))
 	return nil
 }
 
@@ -409,9 +409,9 @@ func (s ServerKeepAlive) Uint16() uint16 {
 // ResponseInformation 响应信息 (0x1A)
 type ResponseInformation string
 
-func (s *ResponseInformation) Pack(buf *bytes.Buffer) error {
+func (s ResponseInformation) Pack(buf *bytes.Buffer) error {
 	buf.WriteByte(0x1A)
-	buf.Write(encodeUTF8(*s))
+	buf.Write(encodeUTF8(s))
 	return nil
 }
 
@@ -429,9 +429,9 @@ func (s ResponseInformation) String() string {
 // ServerReference 服务器引用 (0x1C)
 type ServerReference string
 
-func (s *ServerReference) Pack(buf *bytes.Buffer) error {
+func (s ServerReference) Pack(buf *bytes.Buffer) error {
 	buf.WriteByte(0x1C)
-	buf.Write(encodeUTF8(*s))
+	buf.Write(encodeUTF8(s))
 	return nil
 }
 
@@ -449,12 +449,12 @@ func (s ServerReference) String() string {
 // PayloadFormatIndicator 载荷格式指示 (0x01)
 type PayloadFormatIndicator uint8
 
-func (s *PayloadFormatIndicator) Pack(buf *bytes.Buffer) error {
-	if s == nil || *s == 0 {
+func (s PayloadFormatIndicator) Pack(buf *bytes.Buffer) error {
+	if s == 0 {
 		return nil
 	}
 	buf.WriteByte(0x01)
-	buf.WriteByte(uint8(*s))
+	buf.WriteByte(uint8(s))
 	return nil
 }
 
@@ -471,12 +471,12 @@ func (s *PayloadFormatIndicator) Unpack(buf *bytes.Buffer) (uint32, error) {
 
 type MessageExpiryInterval uint32
 
-func (s *MessageExpiryInterval) Pack(buf *bytes.Buffer) error {
-	if s == nil || *s == 0 {
+func (s MessageExpiryInterval) Pack(buf *bytes.Buffer) error {
+	if s == 0 {
 		return nil
 	}
 	buf.WriteByte(0x02)
-	buf.Write(i4b(uint32(*s)))
+	buf.Write(i4b(uint32(s)))
 	return nil
 }
 
@@ -494,12 +494,12 @@ func (s MessageExpiryInterval) Uint32() uint32 {
 // TopicAlias 主题别名 (0x23)
 type TopicAlias uint16
 
-func (s *TopicAlias) Pack(buf *bytes.Buffer) error {
-	if s == nil || *s == 0 {
+func (s TopicAlias) Pack(buf *bytes.Buffer) error {
+	if s == 0 {
 		return nil
 	}
 	buf.WriteByte(0x23)
-	buf.Write(i2b(uint16(*s)))
+	buf.Write(i2b(uint16(s)))
 	return nil
 }
 
@@ -516,12 +516,12 @@ func (s TopicAlias) Uint16() uint16 {
 
 type CorrelationData []byte
 
-func (s *CorrelationData) Pack(buf *bytes.Buffer) error {
-	if s == nil || len(*s) == 0 {
+func (s CorrelationData) Pack(buf *bytes.Buffer) error {
+	if len(s) == 0 {
 		return nil
 	}
 	buf.WriteByte(0x09)
-	buf.Write(encodeUTF8(*s))
+	buf.Write(encodeUTF8(s))
 	return nil
 }
 
@@ -581,4 +581,18 @@ func (s *SubscriptionIdentifier) Unpack(buf *bytes.Buffer) (uint32, error) {
 // 添加类型转换方法以保持兼容性
 func (s SubscriptionIdentifier) Uint32() uint32 {
 	return uint32(s)
+}
+
+type AssignedClientID string
+
+func (s AssignedClientID) Pack(buf *bytes.Buffer) error {
+	buf.WriteByte(0x12)
+	buf.Write(encodeUTF8(s))
+	return nil
+}
+
+func (s *AssignedClientID) Unpack(buf *bytes.Buffer) (uint32, error) {
+	identifier, num := decodeUTF8[string](buf)
+	*s = AssignedClientID(identifier)
+	return num, nil
 }

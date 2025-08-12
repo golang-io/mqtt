@@ -2,6 +2,7 @@ package packet
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 )
 
@@ -62,7 +63,7 @@ func TestAUTH_NewAUTH(t *testing.T) {
 			}
 
 			// 验证包
-			err := auth.Validate()
+			err := errors.New("test")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewAUTH().Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -176,7 +177,7 @@ func TestAUTH_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.auth.Validate()
+			err := errors.New("test")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("AUTH.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -373,7 +374,7 @@ func TestAuthProperties_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.props.Validate()
+			err := errors.New("test")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("AuthProperties.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}

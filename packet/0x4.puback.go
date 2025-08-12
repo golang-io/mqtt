@@ -3,6 +3,7 @@ package packet
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -128,7 +129,7 @@ type PubackProperties struct {
 	// - 此原因字符串是为诊断而设计的可读字符串，不应该被客户端所解析
 	// - 包含多个原因字符串将造成协议错误
 	// - 用于提供额外的确认信息
-	ReasonString string
+	ReasonString ReasonString
 
 	// UserProperty 用户属性
 	// 属性标识符: 38 (0x26)
@@ -177,13 +178,23 @@ func (props *PubackProperties) Unpack(buf *bytes.Buffer) error {
 		}
 		switch propsId {
 		case 0x1F: // 会话过期间隔 Session Expiry Interval
-			props.ReasonString, i = decodeUTF8[string](buf), i+uint32(len(props.UserProperty))
+			num, err := props.ReasonString.Unpack(buf)
+			if err != nil {
+				return err
+			}
+			i += num
 		case 0x26:
 			if props.UserProperty == nil {
 				props.UserProperty = make(map[string][]string)
 			}
-			key := decodeUTF8[string](buf)
-			props.UserProperty[key] = append(props.UserProperty[key], decodeUTF8[string](buf))
+
+			userProperty := &UserProperty{}
+			num, err := userProperty.Unpack(buf)
+			if err != nil {
+				return fmt.Errorf("failed to unpack user property: %w", err)
+			}
+			props.UserProperty[userProperty.Name] = append(props.UserProperty[userProperty.Name], userProperty.Value)
+			i += num
 		}
 	}
 	return nil

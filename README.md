@@ -79,6 +79,33 @@ var buf bytes.Buffer
 err := connect.Pack(&buf)
 ```
 
+
+PUBACK报文结构：
+```
+graph TD
+    A[PUBACK报文] --> B[固定报头 Fixed Header]
+    A --> C[可变报头 Variable Header]
+    A --> D[载荷 Payload]
+    
+    B --> B1[报文类型: 0x04]
+    B --> B2[标志位: 必须为0]
+    B --> B3[剩余长度]
+    
+    C --> C1[报文标识符 Packet ID]
+    C --> C2[原因码 Reason Code - v5.0]
+    C --> C3[属性 Properties - v5.0]
+    
+    D --> D1[无载荷]
+    
+    C2 --> C2a[0x00: 成功]
+    C2 --> C2b[0x10: 无匹配订阅者]
+    C2 --> C2c[0x80: 未指定错误]
+    C2 --> C2d[0x83: 实现特定错误]
+    
+    C3 --> C3a[原因字符串]
+    C3 --> C3b[用户属性]
+```
+
 ## 开发指南
 
 ### 添加新功能

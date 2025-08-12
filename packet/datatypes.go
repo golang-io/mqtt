@@ -6,96 +6,303 @@ import (
 	"io"
 )
 
+/*
+================================================================================
+MQTT 数据类型和工具函数
+================================================================================
+
+参考文档:
+- MQTT v3.1.1: 章节 1.5 Data representations
+- MQTT v5.0: 章节 1.5 Data representations
+
+================================================================================
+协议概述
+================================================================================
+
+本文件包含了MQTT协议中使用的所有基础数据类型、编码规则和工具函数。
+这些函数实现了MQTT协议规范中定义的数据表示要求。
+
+================================================================================
+版本常量
+================================================================================
+
+MQTT协议版本标识符，用于区分不同版本的协议实现。
+这些值在协议协商和版本兼容性检查中使用。
+
+================================================================================
+数据类型编码规则
+================================================================================
+
+1. 变长字节整数 (Variable Byte Integer)
+   - 参考: MQTT v3.1.1 章节 1.5.2, MQTT v5.0 章节 1.5.2
+   - 编码规则: 每个字节的低7位用于编码数据，最高位表示是否还有后续字节
+   - 最大支持值: 268,435,455 (0xFFFFFFF)
+
+2. UTF-8编码字符串
+   - 参考: MQTT v3.1.1 章节 1.5.3, MQTT v5.0 章节 1.5.3
+   - 编码规则: 前2字节表示字符串长度，后跟UTF-8编码的字符串内容
+   - 长度限制: 最大65,535字节
+
+3. 二进制数据
+   - 编码规则: 前2字节表示数据长度，后跟二进制数据内容
+   - 长度限制: 最大65,535字节
+
+================================================================================
+控制包类型
+================================================================================
+
+MQTT控制包类型定义，位置在固定报头的第1个字节的bits 7-4。
+这些类型标识了不同的MQTT控制包功能。
+
+================================================================================
+*/
+
 const (
+	// VERSION310 MQTT v3.0 版本标识符
+	// 参考: MQTT v3.1.1 章节 1.5 Data representations
+	// 值: 0x3 (3)
 	VERSION310 byte = 0x3
+
+	// VERSION311 MQTT v3.1.1 版本标识符
+	// 参考: MQTT v3.1.1 章节 1.5 Data representations
+	// 值: 0x4 (4)
 	VERSION311 byte = 0x4
+
+	// VERSION500 MQTT v5.0 版本标识符
+	// 参考: MQTT v5.0 章节 1.5 Data representations
+	// 值: 0x5 (5)
 	VERSION500 byte = 0x5
 
-	max1 = 0x7F      //127
-	max2 = 0x3FFF    //16383
-	max3 = 0x200000  // 2097152
-	max4 = 0xFFFFFFF // 268435455
+	// 变长字节整数的分段阈值
+	// 参考: MQTT v3.1.1 章节 1.5.2, MQTT v5.0 章节 1.5.2
+	// 编码规则: 每个字节的低7位用于编码数据，最高位表示是否还有后续字节
 
-	KB = 1024 * 1
-	MB = 1024 * KB
+	// max1 单字节编码的最大值
+	// 值: 0x7F (127)
+	// 当值 < 127 时，使用1个字节编码
+	max1 = 0x7F
+
+	// max2 双字节编码的最大值
+	// 值: 0x3FFF (16,383)
+	// 当值 < 16,383 时，使用2个字节编码
+	max2 = 0x3FFF
+
+	// max3 三字节编码的最大值
+	// 值: 0x200000 (2,097,152)
+	// 当值 < 2,097,152 时，使用3个字节编码
+	max3 = 0x200000
+
+	// max4 四字节编码的最大值
+	// 值: 0xFFFFFFF (268,435,455)
+	// 当值 < 268,435,455 时，使用4个字节编码
+	// 这是变长字节整数支持的最大值
+	max4 = 0xFFFFFFF
+
+	// 数据大小常量
+	KB = 1024 * 1  // 1 KB = 1024 bytes
+	MB = 1024 * KB // 1 MB = 1024 KB
 )
 
-// Kind Control packet types. Position: byte 1, bits 7-4
+// Kind MQTT控制包类型映射表
+// 位置: 固定报头第1个字节，bits 7-4
+// 参考: MQTT v3.1.1 章节 2.2.1 MQTT Control Packet type
+//
+//	MQTT v5.0 章节 2.2.1 MQTT Control Packet type
+//
+// 编码规则:
+// - bits 7-4: 控制包类型 (0x0 到 0xF)
+// - bits 3-0: 特定于每种控制包类型的标志位
 var Kind = map[byte]string{
-	0x0: "[0x0]RESERVED",    // Forbidden 					Reserved
-	0x1: "[0x1]CONNECT",     // 客户端到服务端 客户端请求连接服务端
-	0x2: "[0x2]CONNACK",     // 服务端到客户端 连接报文确认
-	0x3: "[0x3]PUBLISH",     // Client to Server or Server to Client Publish message
-	0x4: "[0x4]PUBACK",      // Client to Server or Server to Client Publish acknowledgment
-	0x5: "[0x5]PUBREC",      // Client to Server or Server to Client Publish received (assured delivery part 1)
-	0x6: "[0x6]PUBREL",      // Client to Server or Server to Client Publish release (assured delivery part 2)
-	0x7: "[0x7]PUBCOMP",     // Client to Server or Server to Client Publish complete (assured delivery part 3)
-	0x8: "[0x8]SUBSCRIBE",   // Client to Server Client subscribe request
-	0x9: "[0x9]SUBACK",      // Server to Client Subscribe acknowledgment
-	0xA: "[0xA]UNSUBSCRIBE", // Client to Server Unsubscribe request
-	0xB: "[0xB]UNSUBACK",    // Server to Client Unsubscribe acknowledgment
-	0xC: "[0xC]PINGREQ",     // Client to Server PING request
-	0xD: "[0xD]PINGRESP",    // Server to Client PING response
-	0xE: "[0xE]DISCONNECT",  // Client to Server Client is disconnecting
-	0xF: "[0xF]AUTH",        // MQTT 3-11-1:Forbidden Reserved, MQTT 5.0:AUTH
+	0x0: "[0x0]RESERVED",    // 保留值 - 禁止使用
+	0x1: "[0x1]CONNECT",     // 客户端到服务端 - 客户端请求连接服务端
+	0x2: "[0x2]CONNACK",     // 服务端到客户端 - 连接报文确认
+	0x3: "[0x3]PUBLISH",     // 客户端到服务端或服务端到客户端 - 发布消息
+	0x4: "[0x4]PUBACK",      // 客户端到服务端或服务端到客户端 - 发布确认
+	0x5: "[0x5]PUBREC",      // 客户端到服务端或服务端到客户端 - 发布收到 (可靠传递第1部分)
+	0x6: "[0x6]PUBREL",      // 客户端到服务端或服务端到客户端 - 发布释放 (可靠传递第2部分)
+	0x7: "[0x7]PUBCOMP",     // 客户端到服务端或服务端到客户端 - 发布完成 (可靠传递第3部分)
+	0x8: "[0x8]SUBSCRIBE",   // 客户端到服务端 - 客户端订阅请求
+	0x9: "[0x9]SUBACK",      // 服务端到客户端 - 订阅确认
+	0xA: "[0xA]UNSUBSCRIBE", // 客户端到服务端 - 取消订阅请求
+	0xB: "[0xB]UNSUBACK",    // 服务端到客户端 - 取消订阅确认
+	0xC: "[0xC]PINGREQ",     // 客户端到服务端 - PING请求
+	0xD: "[0xD]PINGRESP",    // 服务端到客户端 - PING响应
+	0xE: "[0xE]DISCONNECT",  // 客户端到服务端 - 客户端断开连接
+	0xF: "[0xF]AUTH",        // MQTT v3.1.1: 禁止使用(保留), MQTT v5.0: 认证
 }
 
+/*
+================================================================================
+变长字节整数编码/解码函数
+================================================================================
+
+参考: MQTT v3.1.1 章节 1.5.2 Integer data values
+      MQTT v5.0 章节 1.5.2 Integer data values
+
+编码规则:
+1. 每个字节的低7位用于编码数据
+2. 最高位(bit 7)表示是否还有后续字节:
+   - 0: 最后一个字节
+   - 1: 还有后续字节
+3. 数据按小端序编码(least significant byte first)
+4. 最大支持值: 268,435,455 (0xFFFFFFF)
+
+示例:
+- 值 64: 编码为 [0x40] (单字节)
+- 值 321: 编码为 [0xC1, 0x02] (双字节)
+- 值 16384: 编码为 [0x80, 0x80, 0x01] (三字节)
+
+================================================================================
+*/
+
+// encodeLength 将整数编码为变长字节整数
+// 参考: MQTT v3.1.1 章节 1.5.2, MQTT v5.0 章节 1.5.2
+// 参数: v - 要编码的整数值
+// 返回: 编码后的字节切片和错误信息
+// 支持类型: uint32, int, int64
+//
+// 编码算法:
+// 1. 根据值的大小确定需要的字节数
+// 2. 每个字节的低7位存储数据
+// 3. 最高位表示是否还有后续字节
 func encodeLength[T ~uint32 | ~int | ~int64](v T) ([]byte, error) {
 	var result []byte
+
+	// 根据值的大小确定编码字节数
 	if v < max1 {
+		// 值 < 127，使用1个字节
 		result = make([]byte, 1)
 	} else if v < max2 {
+		// 值 < 16,383，使用2个字节
 		result = make([]byte, 2)
 	} else if v < max3 {
+		// 值 < 2,097,152，使用3个字节
 		result = make([]byte, 3)
 	} else if v < max4 {
+		// 值 < 268,435,455，使用4个字节
 		result = make([]byte, 4)
 	} else {
+		// 值超出支持范围
 		return nil, ErrPacketTooLarge
 	}
-	for i := 0; v > 0; i++ {
 
+	// 执行变长字节整数编码
+	for i := 0; v > 0; i++ {
+		// 取当前值的低7位
 		enc := v % 128
+		// 右移7位，准备处理下一个字节
 		v = v / 128
-		if v > 0 { // if there are more data to encode, set the top bit of this byte
+
+		// 如果还有更多数据需要编码，设置当前字节的最高位
+		if v > 0 {
 			enc = enc | 128
 		}
+
+		// 将编码后的值存储到结果字节切片中
 		result[i] = byte(enc)
 	}
+
 	return result, nil
 }
+
+// decodeLength 从io.Reader解码变长字节整数
+// 参考: MQTT v3.1.1 章节 1.5.2, MQTT v5.0 章节 1.5.2
+// 参数: r - 输入流读取器
+// 返回: 解码后的整数值和错误信息
+//
+// 解码算法:
+// 1. 读取字节直到遇到最高位为0的字节
+// 2. 每个字节的低7位组合成最终值
+// 3. 按小端序组合(least significant byte first)
 func decodeLength(r io.Reader) (uint32, error) {
 	vbi, b := uint32(0), make([]byte, 1)
-	for i := 0; i == 0 || b[0]&128 != 0; i += 7 {
-		if _, err := r.Read(b); err != nil && err != io.EOF {
+
+	for i := 0; i == 0 || b[0]&128 != 0; i += 7 { // 循环读取字节，直到遇到最高位为0的字节
+		if _, err := r.Read(b); err != nil && err != io.EOF { // 读取一个字节
 			return 0, err
 		}
-		if vbi |= uint32(b[0]&127) << i; vbi > max4 {
-			return 0, ErrPacketTooLarge
+		if vbi |= uint32(b[0]&127) << i; vbi > max4 { // 将当前字节的低7位左移相应位数后，与之前的值进行或运算
+			return 0, ErrPacketTooLarge // 值超出支持范围
 		}
 	}
 	return vbi, nil
 }
 
-// s2b insert length into content
+/*
+================================================================================
+数据类型编码函数
+================================================================================
+
+这些函数实现了MQTT协议中各种数据类型的编码规则。
+
+================================================================================
+*/
+
+// s2b 将字符串或字节切片编码为MQTT格式
+// 参考: MQTT v3.1.1 章节 1.5.3 UTF-8 encoded strings
+//
+//	MQTT v5.0 章节 1.5.3 UTF-8 encoded strings
+//
+// 参数: s - 要编码的字符串或字节切片
+// 返回: 编码后的字节切片
+//
+// 编码格式:
+// - 前2字节: 字符串长度 (大端序)
+// - 后续字节: 字符串内容
+//
+// 示例:
+// 输入: "hello"
+// 输出: [0x00, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F]
+//
+//	长度:5    h    e    l    l    o
 func s2b[T string | []byte](s T) []byte {
 	b := make([]byte, 2, 2+len(s))
+	// 将长度写入前2字节 (大端序)
 	binary.BigEndian.PutUint16(b, uint16(len(s)))
+	// 将字符串内容追加到长度之后
 	return append(b, s...)
 }
 
+// i2b 将16位整数编码为大端序字节切片
+// 参考: MQTT协议中的整数编码规则
+// 参数: i - 要编码的16位整数
+// 返回: 编码后的字节切片
+//
+// 编码格式: 大端序 (big-endian)
+// 示例:
+// 输入: 258
+// 输出: [0x01, 0x02]
 func i2b(i uint16) []byte {
 	b := make([]byte, 2)
 	binary.BigEndian.PutUint16(b, i)
 	return b
 }
 
+// i4b 将32位整数编码为大端序字节切片
+// 参考: MQTT协议中的整数编码规则
+// 参数: i - 要编码的32位整数
+// 返回: 编码后的字节切片
+//
+// 编码格式: 大端序 (big-endian)
+// 示例:
+// 输入: 66051
+// 输出: [0x00, 0x01, 0x02, 0x03]
 func i4b(i uint32) []byte {
 	b := make([]byte, 4)
 	binary.BigEndian.PutUint32(b, i)
 	return b
 }
 
+// s2i 将字符串转换为布尔值
+// 参考: MQTT协议中的布尔值编码规则
+// 参数: v - 输入字符串
+// 返回: 布尔值 (0 或 1)
+//
+// 转换规则:
+// - 空字符串: 返回 0
+// - 非空字符串: 返回 1
+//
+// 用途: 通常用于编码标志位，如Clean Session、Will Flag等
 func s2i(v string) uint8 {
 	if len(v) == 0 {
 		return 0
@@ -104,15 +311,71 @@ func s2i(v string) uint8 {
 	}
 }
 
-func decodeUTF8[T []byte | string](b *bytes.Buffer) T {
+/*
+================================================================================
+UTF-8字符串编码/解码函数
+================================================================================
+
+参考: MQTT v3.1.1 章节 1.5.3 UTF-8 encoded strings
+      MQTT v5.0 章节 1.5.3 UTF-8 encoded strings
+
+编码规则:
+1. 前2字节表示字符串长度 (大端序)
+2. 后续字节是UTF-8编码的字符串内容
+3. 长度限制: 最大65,535字节
+4. 字符串必须是有效的UTF-8编码
+
+注意事项:
+- UTF-8字符串不能包含空字节 (0x00)
+- 字符串长度不包括长度字段本身的2字节
+- 长度字段使用大端序编码
+
+================================================================================
+*/
+
+// decodeUTF8 从字节缓冲区解码UTF-8字符串
+// 参考: MQTT v3.1.1 章节 1.5.3, MQTT v5.0 章节 1.5.3
+// 参数: b - 包含编码数据的字节缓冲区
+// 返回: 解码后的字符串或字节切片
+// 支持类型: []byte 或 string
+//
+// 解码过程:
+// 1. 读取前2字节作为长度
+// 2. 根据长度读取后续字节作为字符串内容
+// 3. 返回指定类型的结果
+//
+// 示例:
+// 输入: [0x00, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F]
+// 长度: 5
+// 内容: "hello"
+// 输出: "hello" (string类型) 或 [0x68, 0x65, 0x6C, 0x6C, 0x6F] ([]byte类型)
+func decodeUTF8[T []byte | string](b *bytes.Buffer) (T, uint32) {
+	// 读取前2字节作为字符串长度 (大端序)
 	uLength := binary.BigEndian.Uint16(b.Next(2))
-	return T(b.Next(int(uLength)))
+	// 根据长度读取字符串内容并转换为指定类型
+	return T(b.Next(int(uLength))), uint32(uLength)
 }
 
-func encodeUTF8[T []byte | string](v T) []byte {
+// encodeUTF8 将字符串或字节切片编码为MQTT UTF-8格式
+// 参考: MQTT v3.1.1 章节 1.5.3, MQTT v5.0 章节 1.5.3
+// 参数: v - 要编码的字符串或字节切片
+// 返回: 编码后的字节切片
+//
+// 编码格式:
+// - 前2字节: 字符串长度 (大端序)
+// - 后续字节: UTF-8编码的字符串内容
+//
+// 示例:
+// 输入: "hello"
+// 输出: [0x00, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F]
+//
+//	长度:5    h    e    l    l    o
+func encodeUTF8[T ~[]byte | ~string](v T) []byte {
 	uLength := len(v)
+	// 创建包含长度字段的字节切片
 	b := make([]byte, 2, uLength+2)
+	// 将长度写入前2字节 (大端序)
 	binary.BigEndian.PutUint16(b, uint16(uLength))
-	b = append(b, v...)
-	return b
+	// 将字符串内容追加到长度之后
+	return append(b, v...)
 }

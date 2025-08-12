@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.SetFlags(log.Lshortfile | log.LstdFlags | log.Lmicroseconds)
 
 	c := flag.String("config", "./config/dev.json", "Path to config file")
 

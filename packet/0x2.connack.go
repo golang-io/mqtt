@@ -7,19 +7,45 @@ import (
 	"io"
 )
 
-// CONNACK 连接确认报文
-//
-// MQTT v3.1.1: 参考章节 3.2 CONNACK - Acknowledge connection request
-// MQTT v5.0: 参考章节 3.2 CONNACK - Acknowledge connection request
-//
-// 报文结构:
-// 固定报头: 报文类型0x02，标志位必须为0
-// 可变报头: 连接确认标志、连接返回码
-// 载荷: 无载荷
-//
-// 版本差异:
-// - v3.1.1: 基本的连接确认功能，包含连接返回码
-// - v5.0: 在v3.1.1基础上增加了属性系统，支持更详细的连接状态反馈
+/*
+MQTT CONNACK 连接确认报文 - 完整协议实现
+
+参考文档:
+- MQTT Version 3.1.1: 章节 3.2 CONNACK - Acknowledge connection request
+- MQTT Version 5.0: 章节 3.2 CONNACK - Connect acknowledgement
+
+报文结构:
+┌─────────────────────────────────────────────────────────────┐
+│                    Fixed Header                            │
+├─────────────────────────────────────────────────────────────┤
+│ MQTT Control Packet Type (2) │ Reserved (0) │ Remaining   │
+│                              │              │ Length      │
+├─────────────────────────────────────────────────────────────┤
+│                   Variable Header                          │
+├─────────────────────────────────────────────────────────────┤
+│ Connect Acknowledge Flags │ Connect Return Code │ Props    │
+│ (1 byte)                 │ (1 byte)           │ (v5.0)   │
+├─────────────────────────────────────────────────────────────┤
+│                        Payload                             │
+│                        (None)                              │
+└─────────────────────────────────────────────────────────────┘
+
+版本差异:
+- v3.1.1: 基本的连接确认功能，包含连接返回码
+- v5.0: 在v3.1.1基础上增加了属性系统，支持更详细的连接状态反馈
+
+协议约束:
+[MQTT-3.2.0-1] 服务端发送给客户端的第一个报文必须是CONNACK报文
+[MQTT-3.2.0-2] 服务端在网络连接中不能发送超过一个CONNACK报文
+[MQTT-3.2.2-1] 连接确认标志的bit 7-1是保留位，必须设置为0
+[MQTT-3.2.2-2] 如果服务端接受CleanStart=1的连接，必须设置SessionPresent=0
+[MQTT-3.2.2-3] 如果服务端接受CleanStart=0的连接且有会话状态，必须设置SessionPresent=1
+[MQTT-3.2.2-4] 如果客户端没有会话状态但收到SessionPresent=1，必须关闭网络连接
+[MQTT-3.2.2-5] 如果客户端有会话状态但收到SessionPresent=0，必须丢弃会话状态
+[MQTT-3.2.2-6] 如果服务端发送包含非零原因码的CONNACK，必须设置SessionPresent=0
+[MQTT-3.2.2-7] 如果服务端发送原因码≥128的CONNACK，必须关闭网络连接
+[MQTT-3.2.2-8] 服务端必须使用表3-1中的连接原因码值
+*/
 type CONNACK struct {
 	*FixedHeader
 
@@ -34,24 +60,54 @@ type CONNACK struct {
 	// - 1: 服务端有客户端的会话状态
 	// 注意:
 	// - 只有在CleanSession=0时才有意义
-	// - bits 7-6为保留位，必须为0
+	// - bits 7-1为保留位，必须为0 [MQTT-3.2.2-1]
+	// - 如果服务端发送包含非零原因码的CONNACK，必须设置SessionPresent=0 [MQTT-3.2.2-6]
 	SessionPresent uint8
 
-	// ConnectReturnCode 连接返回码
+	// ReturnCode 连接返回码 (v3.1.1) / Connect Reason Code (v5.0)
 	// 位置: 可变报头第2字节
-	// 参考章节: 3.2.2.2 Connect Return code
+	// 参考章节: 3.2.2.2 Connect Return code / Connect Reason Code
 	// 含义: 表示连接请求的处理结果
-	// 值:
+	//
+	// MQTT v3.1.1 连接返回码:
 	// - 0x00: 连接已接受 - 连接已被服务端接受
 	// - 0x01: 连接已拒绝，不支持的协议版本 - 服务端不支持客户端请求的MQTT协议级别
 	// - 0x02: 连接已拒绝，不合格的客户端标识符 - 客户端标识符是正确的UTF-8编码，但服务端不允许使用
 	// - 0x03: 连接已拒绝，服务端不可用 - 网络连接已建立，但MQTT服务不可用
 	// - 0x04: 连接已拒绝，无效的用户名或密码 - 用户名或密码的数据格式无效
 	// - 0x05: 连接已拒绝，未授权 - 客户端未被授权连接到此服务端
+	// - 6-255: 保留供将来使用
+	//
+	// MQTT v5.0 连接原因码:
+	// - 0x00: 成功 - 连接被接受
+	// - 0x80: 未指定错误 - 服务端不希望透露失败原因
+	// - 0x81: 格式错误报文 - CONNECT报文中的数据无法正确解析
+	// - 0x82: 协议错误 - CONNECT报文中的数据不符合本规范
+	// - 0x83: 实现特定错误 - CONNECT有效但不被服务端接受
+	// - 0x84: 不支持的协议版本 - 服务端不支持客户端请求的MQTT协议版本
+	// - 0x85: 客户端标识符无效 - 客户端标识符有效但不被服务端允许
+	// - 0x86: 用户名或密码错误 - 服务端不接受客户端指定的用户名或密码
+	// - 0x87: 未授权 - 客户端未被授权连接
+	// - 0x88: 服务端不可用 - MQTT服务端不可用
+	// - 0x89: 服务端忙 - 服务端忙，稍后重试
+	// - 0x8A: 被禁止 - 客户端被管理操作禁止
+	// - 0x8C: 认证方法错误 - 认证方法不支持或不匹配
+	// - 0x90: 主题名无效 - Will主题名格式正确但不被服务端接受
+	// - 0x95: 报文过大 - CONNECT报文超过最大允许大小
+	// - 0x97: 配额超出 - 超出实现或管理限制
+	// - 0x99: 载荷格式无效 - Will载荷与指定的载荷格式指示符不匹配
+	// - 0x9A: 不支持保留 - 服务端不支持保留消息
+	// - 0x9B: 不支持QoS - 服务端不支持Will QoS
+	// - 0x9C: 使用其他服务端 - 客户端应临时使用其他服务端
+	// - 0x9D: 服务端已移动 - 客户端应永久使用其他服务端
+	// - 0x9F: 连接速率超出 - 连接速率限制已超出
+	//
 	// 注意:
 	// - 如果服务端发送了一个包含非零返回码的CONNACK报文，那么它必须关闭网络连接 [MQTT-3.2.2-5]
 	// - 如果认为上表中的所有连接返回码都不太合适，那么服务端必须关闭网络连接，不需要发送CONNACK报文 [MQTT-3.2.2-6]
-	ConnectReturnCode ReasonCode `json:"ConnectReturnCode,omitempty"`
+	// - 如果服务端发送原因码≥128的CONNACK，必须关闭网络连接 [MQTT-3.2.2-7]
+	// - 服务端必须使用表3-1中的连接原因码值 [MQTT-3.2.2-8]
+	ReturnCode ReasonCode `json:"ReturnCode,omitempty"`
 
 	// Props 连接确认属性 (v5.0新增)
 	// 位置: 可变报头，在连接返回码之后
@@ -65,7 +121,7 @@ func (pkt *CONNACK) Kind() byte {
 }
 
 func (pkt *CONNACK) String() string {
-	return fmt.Sprintf("[0x2]ConnectReturnCode=%d", pkt.ConnectReturnCode.Code)
+	return fmt.Sprintf("[0x2]ConnectReturnCode=%d", pkt.ReturnCode.Code)
 }
 
 // Pack 将CONNACK报文序列化到写入器
@@ -80,11 +136,13 @@ func (pkt *CONNACK) Pack(w io.Writer) error {
 
 	// 写入会话存在标志
 	// 参考章节: 3.2.2.1 Session Present
-	buf.WriteByte(pkt.SessionPresent)
+	// 注意: bits 7-1必须为0 [MQTT-3.2.2-1]
+	sessionPresentByte := pkt.SessionPresent & 0x01 // 只保留bit 0，其他位设为0
+	buf.WriteByte(sessionPresentByte)
 
 	// 写入连接返回码
 	// 参考章节: 3.2.2.2 Connect Return code
-	buf.WriteByte(pkt.ConnectReturnCode.Code)
+	buf.WriteByte(pkt.ReturnCode.Code)
 
 	// v5.0: 写入连接确认属性
 	if pkt.Version == VERSION500 {
@@ -119,13 +177,37 @@ func (pkt *CONNACK) Pack(w io.Writer) error {
 // 2. 连接返回码
 // 3. 属性(v5.0): 连接确认属性
 func (pkt *CONNACK) Unpack(buf *bytes.Buffer) error {
+	// 检查缓冲区是否有足够的数据
+	if buf.Len() < 2 {
+		return fmt.Errorf("insufficient data for CONNACK packet: need at least 2 bytes, got %d", buf.Len())
+	}
+
 	// 解析会话存在标志
 	// 参考章节: 3.2.2.1 Session Present
-	pkt.SessionPresent = buf.Next(1)[0]
+	sessionPresentByte := buf.Next(1)[0]
+	// 验证保留位必须为0 [MQTT-3.2.2-1]
+	if sessionPresentByte&0xFE != 0 {
+		return fmt.Errorf("invalid CONNACK flags: reserved bits 7-1 must be 0, got 0x%02X", sessionPresentByte)
+	}
+	pkt.SessionPresent = sessionPresentByte & 0x01
 
 	// 解析连接返回码
-	// 参考章节: 3.2.2.2 Connect Return code
-	pkt.ConnectReturnCode = ReasonCode{Code: buf.Next(1)[0]}
+	// 参考章节: 3.2.2.2 Connect Return code / Connect Reason Code
+	returnCodeByte := buf.Next(1)[0]
+	pkt.ReturnCode = ReasonCode{Code: returnCodeByte}
+
+	// 验证连接返回码的有效性
+	if pkt.Version == VERSION311 {
+		// MQTT v3.1.1: 只允许0x00-0x05
+		if returnCodeByte > 0x05 {
+			return fmt.Errorf("invalid CONNACK return code for v3.1.1: 0x%02X", returnCodeByte)
+		}
+	} else if pkt.Version == VERSION500 {
+		// MQTT v5.0: 允许0x00和0x80-0x9F
+		if returnCodeByte != 0x00 && (returnCodeByte < 0x80 || returnCodeByte > 0x9F) {
+			return fmt.Errorf("invalid CONNACK reason code for v5.0: 0x%02X", returnCodeByte)
+		}
+	}
 
 	// v5.0: 解析连接确认属性
 	if pkt.Version == VERSION500 {
@@ -142,6 +224,17 @@ func (pkt *CONNACK) Unpack(buf *bytes.Buffer) error {
 // 位置: 可变报头，在连接返回码之后
 // 编码: 属性长度 + 属性标识符 + 属性值
 // 注意: 包含多个相同属性将造成协议错误
+//
+// 属性编码格式:
+// ┌─────────────────────────────────────────────────────────────┐
+// │ Property Length (Variable Byte Integer)                    │
+// ├─────────────────────────────────────────────────────────────┤
+// │ Property Identifier (Variable Byte Integer)                │
+// ├─────────────────────────────────────────────────────────────┤
+// │ Property Value (根据属性类型编码)                           │
+// ├─────────────────────────────────────────────────────────────┤
+// │ ... 更多属性 ...                                           │
+// └─────────────────────────────────────────────────────────────┘
 type ConnackProps struct {
 	// SessionExpiryInterval 会话过期间隔
 	// 属性标识符: 17 (0x11)
@@ -357,6 +450,10 @@ type ConnackProps struct {
 	AuthenticationData []byte
 }
 
+// Pack 将CONNACK属性序列化为字节数组
+// 参考章节: 3.2.2.3 CONNACK Properties
+// 序列化顺序: 按属性标识符顺序写入属性值
+// 注意: 只序列化非零/非空的属性值
 func (props *ConnackProps) Pack() ([]byte, error) {
 	buf := GetBuffer()
 	defer PutBuffer(buf)
@@ -452,56 +549,132 @@ func (props *ConnackProps) Pack() ([]byte, error) {
 
 }
 
+// Unpack 从缓冲区解析CONNACK属性
+// 参考章节: 3.2.2.3 CONNACK Properties
 func (props *ConnackProps) Unpack(b *bytes.Buffer) error {
+	// 解析属性长度
 	propsLen, err := decodeLength(b)
 	if err != nil {
 		return err
 	}
 
-	for i := uint32(0); i < propsLen; i++ {
+	// 记录已处理的字节数，用于验证属性长度
+	processedBytes := uint32(0)
+
+	for processedBytes < propsLen {
 		propsId, err := decodeLength(b)
 		if err != nil {
 			return err
 		}
 		switch propsId {
 		case 0x11: // 会话过期间隔 Session Expiry Interval
-			props.SessionExpiryInterval, i = binary.BigEndian.Uint32(b.Next(4)), i+4
-		case 0x21:
-			props.ReceiveMaximum, i = binary.BigEndian.Uint16(b.Next(2)), i+2
-		case 0x24:
-			props.MaximumQoS, i = b.Next(1)[0], i+1
-		case 0x25:
-			props.RetainAvailable, i = b.Next(1)[0], i+1
-		case 0x27:
-			props.MaximumPacketSize, i = binary.BigEndian.Uint32(b.Next(4)), i+4
-		case 0x12:
-			props.AssignedClientID, i = decodeUTF8[string](b), i+uint32(len(props.AssignedClientID))
-		case 0x22:
-			props.TopicAliasMaximum, i = binary.BigEndian.Uint16(b.Next(2)), i+2
-		case 0x1F:
-			props.ReasonString, i = decodeUTF8[string](b), i+uint32(len(props.ReasonString))
-		case 0x26:
+			if b.Len() < 4 {
+				return fmt.Errorf("insufficient data for Session Expiry Interval")
+			}
+			props.SessionExpiryInterval = binary.BigEndian.Uint32(b.Next(4))
+			processedBytes += 4
+
+		case 0x21: // 接收最大值 Receive Maximum
+			if b.Len() < 2 {
+				return fmt.Errorf("insufficient data for Receive Maximum")
+			}
+			props.ReceiveMaximum = binary.BigEndian.Uint16(b.Next(2))
+			processedBytes += 2
+
+		case 0x24: // 最大服务质量 Maximum QoS
+			if b.Len() < 1 {
+				return fmt.Errorf("insufficient data for Maximum QoS")
+			}
+			props.MaximumQoS = b.Next(1)[0]
+			processedBytes += 1
+
+		case 0x25: // 保留可用 Retain Available
+			if b.Len() < 1 {
+				return fmt.Errorf("insufficient data for Retain Available")
+			}
+			props.RetainAvailable = b.Next(1)[0]
+			processedBytes += 1
+
+		case 0x27: // 最大报文长度 Maximum Packet Size
+			if b.Len() < 4 {
+				return fmt.Errorf("insufficient data for Maximum Packet Size")
+			}
+			props.MaximumPacketSize = binary.BigEndian.Uint32(b.Next(4))
+			processedBytes += 4
+
+		case 0x12: // 分配客户标识符 Assigned Client Identifier
+			clientID, _ := decodeUTF8[string](b)
+			props.AssignedClientID = clientID
+			processedBytes += uint32(len(encodeUTF8(clientID)))
+
+		case 0x22: // 主题别名最大值 Topic Alias Maximum
+			if b.Len() < 2 {
+				return fmt.Errorf("insufficient data for Topic Alias Maximum")
+			}
+			props.TopicAliasMaximum = binary.BigEndian.Uint16(b.Next(2))
+			processedBytes += 2
+
+		case 0x1F: // 原因字符串 Reason String
+			reasonStr, _ := decodeUTF8[string](b)
+			props.ReasonString = reasonStr
+			processedBytes += uint32(len(encodeUTF8(reasonStr)))
+
+		case 0x26: // 用户属性 User Property
 			if props.UserProperty == nil {
 				props.UserProperty = make(map[string][]string)
 			}
-			key := decodeUTF8[string](b)
-			props.UserProperty[key] = append(props.UserProperty[key], decodeUTF8[string](b))
-		case 0x28:
-			props.WildcardSubscriptionAvailable, i = b.Next(1)[0], i+1
-		case 0x29:
-			props.SubscriptionIdentifierAvailable, i = b.Next(1)[0], i+1
-		case 0x2A:
-			props.SharedSubscriptionAvailable, i = b.Next(1)[0], i+1
-		case 0x13:
-			props.ServerKeepAlive, i = binary.BigEndian.Uint16(b.Next(2)), i+2
-		case 0x1A:
-			props.ResponseInformation, i = decodeUTF8[string](b), i+uint32(len(props.ResponseInformation))
-		case 0x1C:
-			props.ServerReference, i = decodeUTF8[string](b), i+uint32(len(props.ServerReference))
-		case 0x15:
-			props.AuthenticationMethod, i = decodeUTF8[string](b), i+uint32(len(props.AuthenticationMethod))
-		case 0x16:
-			props.AuthenticationData, i = decodeUTF8[[]byte](b), i+uint32(len(props.AuthenticationMethod))
+			key, _ := decodeUTF8[string](b)
+			value, _ := decodeUTF8[string](b)
+			props.UserProperty[key] = append(props.UserProperty[key], value)
+			processedBytes += uint32(len(encodeUTF8(key)) + len(encodeUTF8(value)))
+
+		case 0x28: // 通配符订阅可用 Wildcard Subscription Available
+			if b.Len() < 1 {
+				return fmt.Errorf("insufficient data for Wildcard Subscription Available")
+			}
+			props.WildcardSubscriptionAvailable = b.Next(1)[0]
+			processedBytes += 1
+
+		case 0x29: // 订阅标识符可用 Subscription Identifier Available
+			if b.Len() < 1 {
+				return fmt.Errorf("insufficient data for Subscription Identifier Available")
+			}
+			props.SubscriptionIdentifierAvailable = b.Next(1)[0]
+			processedBytes += 1
+
+		case 0x2A: // 共享订阅可用 Shared Subscription Available
+			if b.Len() < 1 {
+				return fmt.Errorf("insufficient data for Shared Subscription Available")
+			}
+			props.SharedSubscriptionAvailable = b.Next(1)[0]
+			processedBytes += 1
+
+		case 0x13: // 服务端保持连接 Server Keep Alive
+			if b.Len() < 2 {
+				return fmt.Errorf("insufficient data for Server Keep Alive")
+			}
+			props.ServerKeepAlive = binary.BigEndian.Uint16(b.Next(2))
+			processedBytes += 2
+
+		case 0x1A: // 响应信息 Response Information
+			responseInfo, _ := decodeUTF8[string](b)
+			props.ResponseInformation = responseInfo
+			processedBytes += uint32(len(encodeUTF8(responseInfo)))
+
+		case 0x1C: // 服务端参考 Server Reference
+			serverRef, _ := decodeUTF8[string](b)
+			props.ServerReference = serverRef
+			processedBytes += uint32(len(encodeUTF8(serverRef)))
+
+		case 0x15: // 认证方法 Authentication Method
+			authMethod, _ := decodeUTF8[string](b)
+			props.AuthenticationMethod = authMethod
+			processedBytes += uint32(len(encodeUTF8(authMethod)))
+
+		case 0x16: // 认证数据 Authentication Data
+			authData, _ := decodeUTF8[[]byte](b)
+			props.AuthenticationData = authData
+			processedBytes += uint32(len(encodeUTF8(authData)))
 		}
 	}
 	return nil

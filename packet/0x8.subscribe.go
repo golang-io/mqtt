@@ -75,6 +75,9 @@ func (pkt *SUBSCRIBE) Pack(w io.Writer) error {
 	}
 
 	for _, subscription := range pkt.Subscriptions {
+		if subscription.TopicFilter == "" {
+			return ErrProtocolViolationNoTopic
+		}
 		buf.Write(s2b(subscription.TopicFilter))
 		buf.WriteByte(subscription.MaximumQoS)
 	}
@@ -92,20 +95,55 @@ func (pkt *SUBSCRIBE) Unpack(buf *bytes.Buffer) error {
 		return ErrMalformedFlags
 	}
 
+	// 调试信息：检查缓冲区长度
+	if buf.Len() < 2 {
+		return fmt.Errorf("buffer too short for packet ID: %d bytes", buf.Len())
+	}
+
 	pkt.PacketID = binary.BigEndian.Uint16(buf.Next(2))
 
 	//
 	if pkt.Version == VERSION500 {
-		pkt.Props = &SubscribeProperties{}
-		if err := pkt.Props.Unpack(buf); err != nil {
-			return err
+		// 检查是否有属性数据
+		if buf.Len() > 0 {
+			// 先读取属性长度
+			propsLen, err := decodeLength(buf)
+			if err != nil {
+				return err
+			}
+
+			// 如果有属性数据，则解析属性
+			if propsLen > 0 {
+				pkt.Props = &SubscribeProperties{}
+				if err := pkt.Props.Unpack(buf); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
 	for buf.Len() != 0 {
 		subscription := Subscription{}
+
+		// 检查是否有足够的字节来读取主题长度
+		if buf.Len() < 2 {
+			return fmt.Errorf("insufficient bytes for topic length: %d", buf.Len())
+		}
+
 		topicLength := int(binary.BigEndian.Uint16(buf.Next(2))) // topic length
+
+		// 检查是否有足够的字节来读取主题内容
+		if buf.Len() < topicLength {
+			return fmt.Errorf("insufficient bytes for topic content: need %d, have %d", topicLength, buf.Len())
+		}
+
 		subscription.TopicFilter = string(buf.Next(topicLength))
+
+		// 检查是否有足够的字节来读取订阅选项
+		if buf.Len() < 1 {
+			return fmt.Errorf("insufficient bytes for subscription options: %d", buf.Len())
+		}
+
 		options := buf.Next(1)[0]
 		subscription.MaximumQoS = options & 0b00000011
 		if subscription.MaximumQoS > 0x02 {
@@ -246,22 +284,29 @@ func (props *SubscribeProperties) Unpack(buf *bytes.Buffer) error {
 		if err != nil {
 			return err
 		}
+		uLen := uint32(0)
 		switch propsCode {
 		case 0x0B:
 			if props.SubscriptionIdentifier, err = decodeLength(buf); err != nil {
 				return err
 			}
 			vb, _ := encodeLength(props.SubscriptionIdentifier)
-			i += uint32(len(vb)) // 用来计算动态数字的占位
+			uLen = uint32(len(vb)) // 用来计算动态数字的占位
 		case 0x26:
 			if props.UserProperty == nil {
 				props.UserProperty = make(map[string][]string)
 			}
-			key := decodeUTF8[string](buf)
-			props.UserProperty[key] = append(props.UserProperty[key], decodeUTF8[string](buf))
+
+			userProperty := &UserProperty{}
+			uLen, err = userProperty.Unpack(buf)
+			if err != nil {
+				return fmt.Errorf("failed to unpack user property: %w", err)
+			}
+			props.UserProperty[userProperty.Name] = append(props.UserProperty[userProperty.Name], userProperty.Value)
 		default:
 			return ErrProtocolViolation
 		}
+		i += uLen
 	}
 	return nil
 }

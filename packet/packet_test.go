@@ -114,7 +114,7 @@ func TestEncodeDecodeUTF8(t *testing.T) {
 
 		// Create a buffer with the encoded string
 		buf := bytes.NewBuffer(encoded)
-		decoded := decodeUTF8[string](buf)
+		decoded, _ := decodeUTF8[string](buf)
 		if decoded != testStr {
 			t.Errorf("UTF8 encode/decode mismatch: expected %s, got %s", testStr, decoded)
 		}

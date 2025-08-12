@@ -255,8 +255,8 @@ func (c *Client) Connect(ctx context.Context) error {
 			return errors.New("mqtt: invalid packet received")
 		}
 
-		if connack.ConnectReturnCode.Code != 0 {
-			log.Printf("client connect failed: client_id=%s, return_code=%v", c.options.ClientID, connack.ConnectReturnCode)
+		if connack.ReturnCode.Code != 0 {
+			log.Printf("client connect failed: client_id=%s, return_code=%v", c.options.ClientID, connack.ReturnCode)
 			return errors.New("mqtt: connect returned non-zero return code")
 		}
 		log.Printf("client connected successfully: client_id=%s, server=%s", c.options.ClientID, c.URL.Host)

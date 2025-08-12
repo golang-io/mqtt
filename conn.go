@@ -80,6 +80,9 @@ func (c *conn) setState(nc net.Conn, state ConnState, runHook bool) {
 func (c *conn) Write(w []byte) (int, error) {
 	//c.mu.Lock()
 	//defer c.mu.Unlock()
+	if c.rwc == nil {
+		return 0, fmt.Errorf("connection is nil or closed")
+	}
 	return c.rwc.Write(w)
 }
 
@@ -170,6 +173,7 @@ func (c *conn) serve(ctx context.Context) {
 	for {
 		rw, err := c.readRequest(ctx)
 		if err != nil {
+			log.Printf("readRequest: err=%v", err)
 			return
 		}
 		serverHandler{c.server}.ServeMQTT(rw, rw.packet)
@@ -183,7 +187,9 @@ func (c *conn) readRequest(_ context.Context) (*response, error) {
 	w.packet, err = packet.Unpack(c.version, c.rwc)
 	stat.PacketReceived.Inc()
 	if err != nil && !errors.Is(err, io.EOF) {
-		pktLog.Printf("recv|%s - %s, err=%v", Kind[w.packet.Kind()], c.ID, err)
+		buf := make([]byte, 1024)
+		runtime.Stack(buf, true)
+		pktLog.Printf("recv|%s - %s, err=%v, stack=%s", Kind[w.packet.Kind()], c.ID, err, buf)
 		return nil, fmt.Errorf("makeRequest: err=%w", err)
 	}
 	//pktLog.Printf("recv|%s - %s", Kind[w.packet.Kind()], c.ID)
@@ -210,18 +216,18 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 		password, ok := CONFIG.GetAuth(rpkt.Username)
 		if !ok || password != rpkt.Password {
 			if rpkt.Version == packet.VERSION500 {
-				connack.ConnectReturnCode = packet.ErrMalformedUsernameOrPassword
+				connack.ReturnCode = packet.ErrMalformedUsernameOrPassword
 			} else {
-				connack.ConnectReturnCode = packet.ErrBadUsernameOrPassword
+				connack.ReturnCode = packet.ErrBadUsernameOrPassword
 			}
 		}
 		c.ID, c.version, c.willTopic, c.willPayload = rpkt.ClientID, rpkt.Version, rpkt.WillTopic, rpkt.WillPayload
 
 		// 记录客户端认证和连接成功日志
-		if connack.ConnectReturnCode.Code == 0 {
+		if connack.ReturnCode.Code == 0 {
 			log.Printf("client auth ok: clientId=%s, username=%s, reomte=%s", c.ID, rpkt.Username, c.remoteAddr)
 		} else {
-			log.Printf("client auth failed: clientId=%s, username=%s, reomte=%s, reason=%v", c.ID, rpkt.Username, c.remoteAddr, connack.ConnectReturnCode)
+			log.Printf("client auth failed: clientId=%s, username=%s, reomte=%s, reason=%v", c.ID, rpkt.Username, c.remoteAddr, connack.ReturnCode)
 		}
 
 		spkt = connack

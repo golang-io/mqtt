@@ -3,6 +3,7 @@ package packet
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -59,12 +60,21 @@ func (pkt *UNSUBSCRIBE) Kind() byte {
 }
 
 func (pkt *UNSUBSCRIBE) Pack(w io.Writer) error {
+	// 检查是否至少包含一个主题过滤器
+	if len(pkt.Subscriptions) == 0 {
+		return ErrMalformedTopic
+	}
+
 	buf := GetBuffer()
 	defer PutBuffer(buf)
 	buf.Write(i2b(pkt.PacketID))
+
+	// 写入主题过滤器
 	for _, subscription := range pkt.Subscriptions {
 		buf.Write(s2b(subscription.TopicFilter))
 	}
+
+	// 计算初始长度
 	pkt.FixedHeader.RemainingLength = uint32(buf.Len())
 	if pkt.Version == VERSION500 {
 		b, err := pkt.Props.Pack()
@@ -85,12 +95,17 @@ func (pkt *UNSUBSCRIBE) Pack(w io.Writer) error {
 	}
 	_, err := buf.WriteTo(w)
 	return err
-
 }
 
 func (pkt *UNSUBSCRIBE) Unpack(buf *bytes.Buffer) error {
+	// 检查是否有足够的数据读取报文标识符
+	if buf.Len() < 2 {
+		return ErrMalformedPacketID
+	}
+
 	pkt.PacketID = binary.BigEndian.Uint16(buf.Next(2))
 
+	// 处理MQTT v5.0属性
 	if pkt.Version == VERSION500 {
 		pkt.Props = &UnsubscribeProperties{}
 		if err := pkt.Props.Unpack(buf); err != nil {
@@ -103,6 +118,12 @@ func (pkt *UNSUBSCRIBE) Unpack(buf *bytes.Buffer) error {
 		subscription := Subscription{TopicFilter: string(buf.Next(topicLength))}
 		pkt.Subscriptions = append(pkt.Subscriptions, subscription)
 	}
+
+	// 检查是否至少有一个主题过滤器
+	if len(pkt.Subscriptions) == 0 {
+		return ErrMalformedTopic
+	}
+
 	return nil
 }
 
@@ -158,8 +179,15 @@ func (props *UnsubscribeProperties) Unpack(buf *bytes.Buffer) error {
 			if props.UserProperty == nil {
 				props.UserProperty = make(map[string][]string)
 			}
-			key := decodeUTF8[string](buf)
-			props.UserProperty[key] = append(props.UserProperty[key], decodeUTF8[string](buf))
+			userProperty := &UserProperty{}
+			uLen, err := userProperty.Unpack(buf)
+			if err != nil {
+				return fmt.Errorf("failed to unpack user property: %w", err)
+			}
+			props.UserProperty[userProperty.Name] = append(props.UserProperty[userProperty.Name], userProperty.Value)
+			i += uLen
+		default:
+			return ErrProtocolViolation
 		}
 	}
 	return nil

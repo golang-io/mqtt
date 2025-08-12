@@ -3,6 +3,7 @@ package packet
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -68,6 +69,11 @@ func (pkt *PUBREL) Kind() byte {
 }
 
 func (pkt *PUBREL) Pack(w io.Writer) error {
+	// 确保标志位正确设置
+	pkt.Dup = 0
+	pkt.QoS = 1 // PUBREL的QoS必须为1
+	pkt.Retain = 0
+
 	buf := GetBuffer()
 	defer PutBuffer(buf)
 	buf.Write(i2b(pkt.PacketID))
@@ -127,7 +133,7 @@ type PubrelProperties struct {
 	// - 此原因字符串是为诊断而设计的可读字符串，不应该被客户端所解析
 	// - 包含多个原因字符串将造成协议错误
 	// - 用于提供额外的发布释放信息
-	ReasonString string
+	ReasonString ReasonString
 
 	// UserProperty 用户属性
 	// 属性标识符: 38 (0x26)
@@ -174,16 +180,27 @@ func (props *PubrelProperties) Unpack(buf *bytes.Buffer) error {
 		if err != nil {
 			return err
 		}
+		uLen := uint32(0)
 		switch propsId {
-		case 0x1F: // 会话过期间隔 Session Expiry Interval
-			props.ReasonString, i = decodeUTF8[string](buf), i+uint32(len(props.UserProperty))
+		case 0x1F: // ReasonString
+			if uLen, err = props.ReasonString.Unpack(buf); err != nil {
+				return err
+			}
 		case 0x26:
 			if props.UserProperty == nil {
 				props.UserProperty = make(map[string][]string)
 			}
-			key := decodeUTF8[string](buf)
-			props.UserProperty[key] = append(props.UserProperty[key], decodeUTF8[string](buf))
+
+			userProperty := &UserProperty{}
+			uLen, err = userProperty.Unpack(buf)
+			if err != nil {
+				return fmt.Errorf("failed to unpack user property: %w", err)
+			}
+			props.UserProperty[userProperty.Name] = append(props.UserProperty[userProperty.Name], userProperty.Value)
+		default:
+			return ErrMalformedProperties
 		}
+		i += uLen
 	}
 	return nil
 }

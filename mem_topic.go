@@ -1,12 +1,14 @@
 package mqtt
 
 import (
+	"context"
 	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/golang-io/mqtt/packet"
+	"golang.org/x/sync/errgroup"
 )
 
 type MemorySubscribed struct {
@@ -132,21 +134,20 @@ func (s *TopicSubscribed) Unsubscribe(c *conn) int {
 func (s *TopicSubscribed) Exchange(message *packet.Message) error {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
+	group, _ := errgroup.WithContext(context.Background())
 	for c := range s.activeConn {
 		response := &response{conn: c}
-		go func() {
+		group.Go(func() error {
 			newPub := &packet.PUBLISH{
 				FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBLISH, Dup: 0, QoS: 0, Retain: 0},
-				Message:     &packet.Message{TopicName: message.TopicName, Content: message.Content},
+				Message:     message,
 			}
-
 			if newPub.QoS > 0 {
 				newPub.PacketID = c.PacketID + 1
 				c.PacketID = newPub.PacketID
 			}
-			//pktLog.Printf("send|%s - %s", Kind[newPub.Kind()], c.ID)
-			response.OnSend(newPub)
-		}()
+			return response.OnSend(newPub)
+		})
 	}
-	return nil
+	return group.Wait()
 }

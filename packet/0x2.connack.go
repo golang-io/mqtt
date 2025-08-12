@@ -176,39 +176,9 @@ func (pkt *CONNACK) Pack(w io.Writer) error {
 // 2. 连接返回码
 // 3. 属性(v5.0): 连接确认属性
 func (pkt *CONNACK) Unpack(buf *bytes.Buffer) error {
-	// 检查缓冲区是否有足够的数据
-	if buf.Len() < 2 {
-		return fmt.Errorf("insufficient data for CONNACK packet: need at least 2 bytes, got %d", buf.Len())
-	}
+	pkt.SessionPresent = buf.Next(1)[0] & 0x01
+	pkt.ReturnCode = ReasonCode{Code: buf.Next(1)[0]}
 
-	// 解析会话存在标志
-	// 参考章节: 3.2.2.1 Session Present
-	sessionPresentByte := buf.Next(1)[0]
-	// 验证保留位必须为0 [MQTT-3.2.2-1]
-	if sessionPresentByte&0xFE != 0 {
-		return fmt.Errorf("invalid CONNACK flags: reserved bits 7-1 must be 0, got 0x%02X", sessionPresentByte)
-	}
-	pkt.SessionPresent = sessionPresentByte & 0x01
-
-	// 解析连接返回码
-	// 参考章节: 3.2.2.2 Connect Return code / Connect Reason Code
-	returnCodeByte := buf.Next(1)[0]
-	pkt.ReturnCode = ReasonCode{Code: returnCodeByte}
-
-	// 验证连接返回码的有效性
-	if pkt.Version == VERSION311 {
-		// MQTT v3.1.1: 只允许0x00-0x05
-		if returnCodeByte > 0x05 {
-			return fmt.Errorf("invalid CONNACK return code for v3.1.1: 0x%02X", returnCodeByte)
-		}
-	} else if pkt.Version == VERSION500 {
-		// MQTT v5.0: 允许0x00和0x80-0x9F
-		if returnCodeByte != 0x00 && (returnCodeByte < 0x80 || returnCodeByte > 0x9F) {
-			return fmt.Errorf("invalid CONNACK reason code for v5.0: 0x%02X", returnCodeByte)
-		}
-	}
-
-	// v5.0: 解析连接确认属性
 	if pkt.Version == VERSION500 {
 		pkt.Props = &ConnackProps{}
 		if err := pkt.Props.Unpack(buf); err != nil {

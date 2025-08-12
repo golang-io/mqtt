@@ -171,8 +171,7 @@ func (props *PubackProperties) Unpack(buf *bytes.Buffer) error {
 		uLen := uint32(0)
 		switch propsId {
 		case 0x1F: // 会话过期间隔 Session Expiry Interval
-			uLen, err = props.ReasonString.Unpack(buf)
-			if err != nil {
+			if uLen, err = props.ReasonString.Unpack(buf); err != nil {
 				return err
 			}
 		case 0x26:

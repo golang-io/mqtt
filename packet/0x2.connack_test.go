@@ -658,11 +658,12 @@ func TestCONNACK_VersionDifferences(t *testing.T) {
 			payloadStart := 2
 			payloadLen := len(result) - payloadStart
 
-			if tc.version == VERSION311 {
+			switch tc.version {
+			case VERSION311:
 				if payloadLen != tc.expectedLen {
 					t.Errorf("V3.1.1 payload length = %d, want %d", payloadLen, tc.expectedLen)
 				}
-			} else if tc.version == VERSION500 {
+			case VERSION500:
 				if payloadLen < tc.expectedLen {
 					t.Errorf("V5.0 payload length = %d, want >= %d", payloadLen, tc.expectedLen)
 				}

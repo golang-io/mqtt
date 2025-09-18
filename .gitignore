@@ -27,6 +27,8 @@ go.work.sum
 vendor/
 .idea/
 package/
+cert/
+config/
 mqtt-server
 mqtt-server.tar.gz
 

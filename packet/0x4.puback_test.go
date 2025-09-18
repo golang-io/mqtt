@@ -314,12 +314,13 @@ func TestPUBACK_ProtocolCompliance(t *testing.T) {
 			}
 
 			// 验证版本特定的字段
-			if tc.puback.Version == VERSION500 {
+			switch tc.puback.Version {
+			case VERSION500:
 				// v5.0必须包含ReasonCode
 				if tc.puback.ReasonCode.Code == 0 && tc.puback.ReasonCode.Reason == "" {
 					t.Logf("Note: v5.0 PUBACK should include a reason code")
 				}
-			} else if tc.puback.Version == VERSION311 {
+			case VERSION311:
 				// v3.1.1不应该包含ReasonCode
 				if tc.puback.ReasonCode.Code != 0 || tc.puback.ReasonCode.Reason != "" {
 					t.Logf("Note: v3.1.1 PUBACK should not include reason code")

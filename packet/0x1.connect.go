@@ -921,7 +921,7 @@ type WillProperties struct {
 	// - 如果某个连接到服务端的网络连接使用已存在的客户标识符，此已存在的网络连接的遗嘱消息将会被发布，除非新的网络连接设置了新开始（Clean Start）为0并且遗嘱延时大于0
 	// - 如果遗嘱延时为0，遗嘱消息将在网络连接断开时发布
 	// - 如果新开始为1，遗嘱消息也将被发布，因为此会话已结束
-	WillDelayInterval uint32 `json:"WillDelayInterval,omitempty"`
+	WillDelayInterval WillDelayInterval `json:"WillDelayInterval,omitempty"`
 
 	// PayloadFormatIndicator 载荷格式指示
 	// 属性标识符: 1 (0x01)
@@ -934,7 +934,7 @@ type WillProperties struct {
 	// - 包含多个载荷格式指示将造成协议错误
 	// - 载荷中的UTF-8数据必须按照Unicode规范和RFC 3629中的申明进行编码
 	// - 服务端可以按照格式指示对遗嘱消息进行验证，如果验证失败发送一条包含原因码0x99（载荷格式无效）的CONNACK报文
-	PayloadFormatIndicator uint8 `json:"PayloadFormatIndicator,omitempty"`
+	PayloadFormatIndicator PayloadFormatIndicator `json:"PayloadFormatIndicator,omitempty"`
 
 	// MessageExpiryInterval 消息过期间隔
 	// 属性标识符: 2 (0x02)
@@ -945,7 +945,7 @@ type WillProperties struct {
 	// - 包含多个消息过期间隔将导致协议错误
 	// - 如果设定了消息过期间隔，四字节整数描述了遗嘱消息的生命周期（秒），并在服务端发布遗嘱消息时被当做发布过期间隔
 	// - 如果没有设定消息过期间隔，服务端发布遗嘱消息时将不发送消息过期间隔
-	MessageExpiryInterval uint32 `json:"MessageExpiryInterval,omitempty"`
+	MessageExpiryInterval MessageExpiryInterval `json:"MessageExpiryInterval,omitempty"`
 
 	// ContentType 内容类型
 	// 属性标识符: 3 (0x03)
@@ -955,7 +955,7 @@ type WillProperties struct {
 	// 注意:
 	// - 包含多个内容类型将造成协议错误
 	// - 内容类型的值由发送应用程序和接收应用程序确定
-	ContentType string `json:"ContentType,omitempty"`
+	ContentType ContentType `json:"ContentType,omitempty"`
 
 	// ResponseTopic 响应主题
 	// 属性标识符: 8 (0x08)
@@ -965,7 +965,7 @@ type WillProperties struct {
 	// 注意:
 	// - 包含多个响应主题将造成协议错误
 	// - 响应主题的存在将遗嘱消息标识为一个请求报文
-	ResponseTopic string `json:"ResponseTopic,omitempty"`
+	ResponseTopic ResponseTopic `json:"ResponseTopic,omitempty"`
 
 	// CorrelationData 对比数据
 	// 属性标识符: 9 (0x09)
@@ -977,7 +977,7 @@ type WillProperties struct {
 	// - 如果没有设置对比数据，则请求方不需要任何对比数据
 	// - 对比数据只对请求消息的发送端和响应消息的接收端有意义
 	// - 更多关于请求/响应的内容，参考4.10节
-	CorrelationData []byte `json:"CorrelationData,omitempty"`
+	CorrelationData CorrelationData `json:"CorrelationData,omitempty"`
 
 	// UserProperty 用户属性
 	// 属性标识符: 38 (0x26)
@@ -990,7 +990,7 @@ type WillProperties struct {
 	// - 服务端在发布遗嘱消息时必须维护用户属性的顺序 [MQTT-3.1.3-10]
 	// 非规范评注:
 	// - 此属性旨在提供一种传递应用层名称-值标签的方法，其含义和解释仅由负责发送和接收它们的应用程序所有
-	UserProperty []byte
+	UserProperty UserProperty
 }
 
 func (props *WillProperties) Pack() ([]byte, error) {
@@ -1001,96 +1001,81 @@ func (props *WillProperties) Pack() ([]byte, error) {
 	// 注意：属性顺序在序列化时必须保持一致
 
 	// 载荷格式指示 (0x01)
-	if props.PayloadFormatIndicator != 0 {
-		buf.WriteByte(0x01)
-		buf.WriteByte(props.PayloadFormatIndicator)
+	if err := props.PayloadFormatIndicator.Pack(buf); err != nil {
+		return nil, err
 	}
 
 	// 消息过期间隔 (0x02)
-	if props.MessageExpiryInterval != 0 {
-		buf.WriteByte(0x02)
-		buf.Write(i4b(props.MessageExpiryInterval))
+	if err := props.MessageExpiryInterval.Pack(buf); err != nil {
+		return nil, err
 	}
 
 	// 内容类型 (0x03)
-	if props.ContentType != "" {
-		buf.WriteByte(0x03)
-		buf.Write(encodeUTF8(props.ContentType))
+	if err := props.ContentType.Pack(buf); err != nil {
+		return nil, err
 	}
 
 	// 响应主题 (0x08)
-	if props.ResponseTopic != "" {
-		buf.WriteByte(0x08)
-		buf.Write(encodeUTF8(props.ResponseTopic))
+	if err := props.ResponseTopic.Pack(buf); err != nil {
+		return nil, err
 	}
 
 	// 对比数据 (0x09)
-	if props.CorrelationData != nil {
-		buf.WriteByte(0x09)
-		buf.Write(encodeUTF8(props.CorrelationData))
+	if err := props.CorrelationData.Pack(buf); err != nil {
+		return nil, err
+	}
+
+	if err := props.UserProperty.Pack(buf); err != nil {
+		return nil, err
 	}
 
 	// 遗嘱延时间隔 (0x18)
-	if props.WillDelayInterval != 0 {
-		buf.WriteByte(0x18)
-		buf.Write(i4b(props.WillDelayInterval))
+	if err := props.WillDelayInterval.Pack(buf); err != nil {
+		return nil, err
 	}
 
 	return buf.Bytes(), nil
 }
 
-func (props *WillProperties) Unpack(b *bytes.Buffer) error {
-	propsLen, err := decodeLength(b)
+func (props *WillProperties) Unpack(buf *bytes.Buffer) error {
+	propsLen, err := decodeLength(buf)
 	if err != nil {
 		return err
 	}
 
-	// 记录已处理的属性，避免重复属性
-	processedProps := make(map[uint32]bool)
-
-	for i := uint32(0); i < propsLen; i++ {
-		propsId, err := decodeLength(b)
+	for i, uLen := uint32(0), uint32(0); i < propsLen; i = i + uLen + 1 {
+		propsId, err := decodeLength(buf)
 		if err != nil {
 			return err
 		}
 
-		// 检查属性是否重复
-		if processedProps[propsId] {
-			return ErrProtocolErr // 包含多个相同属性将造成协议错误
-		}
-		processedProps[propsId] = true
-
 		switch propsId {
 		case 0x01: // 载荷格式指示 Payload Format Indicator
-			props.PayloadFormatIndicator = b.Next(1)[0]
-			i += 1
-			// 验证值只能是0或1
-			if props.PayloadFormatIndicator > 1 {
-				return ErrProtocolErr
+			if uLen, err = props.PayloadFormatIndicator.Unpack(buf); err != nil {
+				return fmt.Errorf("failed to unpack PayloadFormatIndicator: %w", err)
 			}
-
 		case 0x02: // 消息过期间隔 Message Expiry Interval
-			props.MessageExpiryInterval = binary.BigEndian.Uint32(b.Next(4))
-			i += 4
-
+			if uLen, err = props.MessageExpiryInterval.Unpack(buf); err != nil {
+				return fmt.Errorf("failed to unpack MessageExpiryInterval: %w", err)
+			}
 		case 0x03: // 内容类型 Content Type
-			props.ContentType, _ = decodeUTF8[string](b)
-			i += uint32(len(props.ContentType))
-
+			if uLen, err = props.ContentType.Unpack(buf); err != nil {
+				return fmt.Errorf("failed to unpack ContentType: %w", err)
+			}
 		case 0x08: // 响应主题 Response Topic
-			props.ResponseTopic, _ = decodeUTF8[string](b)
-			i += uint32(len(props.ResponseTopic))
-
+			if uLen, err = props.ResponseTopic.Unpack(buf); err != nil {
+				return fmt.Errorf("failed to unpack ResponseTopic: %w", err)
+			}
 		case 0x09: // 对比数据 Correlation Data
-			props.CorrelationData, _ = decodeUTF8[[]byte](b)
-			i += uint32(len(props.CorrelationData))
-
+			if uLen, err = props.CorrelationData.Unpack(buf); err != nil {
+				return fmt.Errorf("failed to unpack CorrelationData: %w", err)
+			}
 		case 0x18: // 遗嘱延时间隔 Will Delay Interval
-			props.WillDelayInterval = binary.BigEndian.Uint32(b.Next(4))
-			i += 4
-
+			if uLen, err = props.WillDelayInterval.Unpack(buf); err != nil {
+				return fmt.Errorf("failed to unpack WillDelayInterval: %w", err)
+			}
 		default:
-			return ErrMalformedWillProperties
+			return fmt.Errorf("%w: propsId=%d", ErrMalformedWillProperties, propsId)
 		}
 	}
 	return nil

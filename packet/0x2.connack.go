@@ -485,12 +485,12 @@ func (props *ConnackProps) Unpack(buf *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	for i := uint32(0); i < propsLen; i++ {
+	for i, uLen := uint32(0), uint32(0); i < propsLen; i = i + uLen + 1 {
 		propsId, err := decodeLength(buf)
 		if err != nil {
 			return err
 		}
-		uLen := uint32(0)
+		// uLen := uint32(0)
 		switch propsId {
 		case 0x11: // 会话过期间隔 Session Expiry Interval
 			if uLen, err = props.SessionExpiryInterval.Unpack(buf); err != nil {

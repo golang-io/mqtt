@@ -200,7 +200,7 @@ func (s AuthenticationMethod) Pack(buf *bytes.Buffer) error {
 func (s *AuthenticationMethod) Unpack(buf *bytes.Buffer) (uint32, error) {
 	method, num := decodeUTF8[string](buf)
 	*s = AuthenticationMethod(method)
-	return num, nil
+	return num + 2, nil
 }
 
 // 添加类型转换方法以保持兼容性
@@ -220,7 +220,7 @@ func (s AuthenticationData) Pack(buf *bytes.Buffer) error {
 func (s *AuthenticationData) Unpack(buf *bytes.Buffer) (uint32, error) {
 	authenticationData, num := decodeUTF8[[]byte](buf)
 	*s = AuthenticationData(authenticationData)
-	return num, nil
+	return num + 2, nil
 }
 
 // 添加类型转换方法以保持兼容性
@@ -286,7 +286,7 @@ func (s AssignedClientIdentifier) Pack(buf *bytes.Buffer) error {
 func (s *AssignedClientIdentifier) Unpack(buf *bytes.Buffer) (uint32, error) {
 	identifier, num := decodeUTF8[string](buf)
 	*s = AssignedClientIdentifier(identifier)
-	return num, nil
+	return num + 2, nil
 }
 
 // 添加类型转换方法以保持兼容性
@@ -309,7 +309,7 @@ func (s ReasonString) Pack(buf *bytes.Buffer) error {
 func (s *ReasonString) Unpack(buf *bytes.Buffer) (uint32, error) {
 	reason, num := decodeUTF8[string](buf)
 	*s = ReasonString(reason)
-	return num, nil
+	return num + 2, nil
 }
 
 // 添加类型转换方法以保持兼容性
@@ -418,7 +418,7 @@ func (s ResponseInformation) Pack(buf *bytes.Buffer) error {
 func (s *ResponseInformation) Unpack(buf *bytes.Buffer) (uint32, error) {
 	response, num := decodeUTF8[string](buf)
 	*s = ResponseInformation(response)
-	return num, nil
+	return num + 2, nil
 }
 
 // 添加类型转换方法以保持兼容性
@@ -438,7 +438,7 @@ func (s ServerReference) Pack(buf *bytes.Buffer) error {
 func (s *ServerReference) Unpack(buf *bytes.Buffer) (uint32, error) {
 	reference, num := decodeUTF8[string](buf)
 	*s = ServerReference(reference)
-	return num, nil
+	return num + 2, nil
 }
 
 // 添加类型转换方法以保持兼容性
@@ -528,7 +528,7 @@ func (s CorrelationData) Pack(buf *bytes.Buffer) error {
 func (s *CorrelationData) Unpack(buf *bytes.Buffer) (uint32, error) {
 	correlationData, num := decodeUTF8[[]byte](buf)
 	*s = CorrelationData(correlationData)
-	return num, nil
+	return num + 2, nil
 }
 
 // 添加类型转换方法以保持兼容性
@@ -550,7 +550,7 @@ func (s ContentType) Pack(buf *bytes.Buffer) error {
 func (s *ContentType) Unpack(buf *bytes.Buffer) (uint32, error) {
 	reason, num := decodeUTF8[string](buf)
 	*s = ContentType(reason)
-	return num, nil
+	return num + 2, nil
 }
 
 // 添加类型转换方法以保持兼容性
@@ -594,5 +594,49 @@ func (s AssignedClientID) Pack(buf *bytes.Buffer) error {
 func (s *AssignedClientID) Unpack(buf *bytes.Buffer) (uint32, error) {
 	identifier, num := decodeUTF8[string](buf)
 	*s = AssignedClientID(identifier)
-	return num, nil
+	return num + 2, nil
+}
+
+type WillDelayInterval uint32
+
+func (s WillDelayInterval) Pack(buf *bytes.Buffer) error {
+	if s == 0 {
+		return nil
+	}
+	buf.WriteByte(0x18)
+	buf.Write(i4b(uint32(s)))
+	return nil
+}
+
+func (s *WillDelayInterval) Unpack(buf *bytes.Buffer) (uint32, error) {
+	interval := binary.BigEndian.Uint32(buf.Next(4))
+	*s = WillDelayInterval(interval)
+	return uint32(4), nil
+}
+
+// 添加类型转换方法以保持兼容性
+func (s WillDelayInterval) Uint32() uint32 {
+	return uint32(s)
+}
+
+type ResponseTopic string
+
+func (s ResponseTopic) Pack(buf *bytes.Buffer) error {
+	if s == "" {
+		return nil
+	}
+	buf.WriteByte(0x08)
+	buf.Write(encodeUTF8(s))
+	return nil
+}
+
+func (s *ResponseTopic) Unpack(buf *bytes.Buffer) (uint32, error) {
+	respTopic, num := decodeUTF8[string](buf)
+	*s = ResponseTopic(respTopic)
+	return num + 2, nil
+}
+
+// 添加类型转换方法以保持兼容性
+func (s ResponseTopic) String() string {
+	return string(s)
 }

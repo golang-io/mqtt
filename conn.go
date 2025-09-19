@@ -187,10 +187,8 @@ func (c *conn) readRequest(_ context.Context) (*response, error) {
 	w.packet, err = packet.Unpack(c.version, c.rwc)
 	stat.PacketReceived.Inc()
 	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("makeRequest: err=%w", err)
+		return nil, fmt.Errorf("makeRequest: version=%d, %s, err=%w", c.version, packet.Kind[w.packet.Kind()], err)
 	}
-	//pktLog.Printf("recv|%s - %s", Kind[w.packet.Kind()], c.ID)
-
 	return w, err
 }
 
@@ -219,7 +217,7 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 			}
 		}
 		c.ID, c.version, c.willTopic, c.willPayload = rpkt.ClientID, rpkt.Version, rpkt.WillTopic, rpkt.WillPayload
-
+		log.Printf("client will: willTopic=%s, willPayload=%s, reomte=%s, version=%d", c.willTopic, c.willPayload, c.remoteAddr, c.version)
 		// 记录客户端认证和连接成功日志
 		if connack.ReturnCode.Code == 0 {
 			log.Printf("client auth ok: clientId=%s, username=%s, reomte=%s", c.ID, rpkt.Username, c.remoteAddr)

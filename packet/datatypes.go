@@ -169,8 +169,8 @@ func encodeLength[T ~uint32 | ~int | ~int64](v T) ([]byte, error) {
 	var result []byte
 
 	// 根据值的大小确定编码字节数
-	if v < max1 {
-		// 值 < 127，使用1个字节
+	if v <= max1 {
+		// 值 <= 127，使用1个字节
 		result = make([]byte, 1)
 	} else if v < max2 {
 		// 值 < 16,383，使用2个字节

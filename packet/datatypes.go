@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"slices"
 )
 
 /*
@@ -352,8 +353,22 @@ UTF-8字符串编码/解码函数
 func decodeUTF8[T []byte | string](b *bytes.Buffer) (T, uint32) {
 	// 读取前2字节作为字符串长度 (大端序)
 	uLength := binary.BigEndian.Uint16(b.Next(2))
-	// 根据长度读取字符串内容并转换为指定类型
-	return T(b.Next(int(uLength))), uint32(uLength)
+	// 读取字符串内容
+	content := b.Next(int(uLength))
+
+	// 修复：对[]byte类型进行深拷贝，避免内存共享问题
+	// 当缓冲区被复用时，原始的[]byte引用会被覆盖，导致遗嘱消息等数据损坏
+	var result T
+	switch any(result).(type) {
+	case []byte:
+		// 对[]byte类型使用slices.Clone创建深拷贝，确保数据独立性
+		result = T(slices.Clone(content))
+	case string:
+		// string类型是不可变的，可以直接转换
+		result = T(content)
+	}
+
+	return result, uint32(uLength)
 }
 
 // encodeUTF8 将字符串或字节切片编码为MQTT UTF-8格式

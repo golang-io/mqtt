@@ -20,6 +20,7 @@ type config struct {
 	WebSocket  Listen            `json:"Websocket"`
 	WebSockets Listen            `json:"Websockets"`
 	Auth       map[string]string `json:"Auth"`
+	Federated  []string          `json:"Federated"`
 }
 
 func (c *config) GetAuth(username string) (string, bool) {
@@ -67,20 +68,22 @@ func Subscription(subscription ...packet.Subscription) Option {
 	}
 }
 
-func Version[T ~string | ~byte](version T) Option {
+func Version(version string) Option {
 	return func(o *Options) {
-		switch v := any(version).(type) {
-		case byte:
-			o.Version = v
-		case string:
-			switch v {
-			case "5.0.0":
-				o.Version = packet.VERSION500
-			case "3.1.1":
-				o.Version = packet.VERSION311
-			default:
-				panic(fmt.Errorf("version = %s not support", v))
-			}
+		switch version {
+		case "5.0.0":
+			o.Version = packet.VERSION500
+		case "3.1.1":
+			o.Version = packet.VERSION311
+		default:
+			panic(fmt.Errorf("version = %s not support", version))
 		}
+	}
+}
+
+// ClientID 设置客户端ID
+func ClientID(clientID string) Option {
+	return func(o *Options) {
+		o.ClientID = clientID
 	}
 }

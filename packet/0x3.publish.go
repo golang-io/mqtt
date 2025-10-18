@@ -368,6 +368,7 @@ type Message struct {
 	// 注意: 包含零长度有效载荷的Publish报文是合法的
 	// 用途: 实际的应用消息内容
 	Content []byte
+	mode    string // 消息模式: local, cluster
 }
 
 func (m *Message) String() string {

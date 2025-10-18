@@ -291,7 +291,9 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 			c.subscribeTopics.Unsubscribe(subscribe.TopicFilter)
 			unsubscribedTopics = append(unsubscribedTopics, subscribe.TopicFilter)
 		}
-		c.server.memorySubscribed.Unsubscribe(c)
+
+		// 从订阅管理器中取消订阅指定的topics
+		c.server.memorySubscribed.UnsubscribeTopics(c, unsubscribedTopics)
 
 		// 记录取消订阅日志
 		if len(unsubscribedTopics) > 0 {

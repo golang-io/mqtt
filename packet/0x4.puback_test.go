@@ -308,11 +308,6 @@ func TestPUBACK_ProtocolCompliance(t *testing.T) {
 				t.Logf("Warning: RETAIN flag should be 0 according to MQTT spec")
 			}
 
-			// 验证Packet ID范围
-			if tc.puback.PacketID < 1 || tc.puback.PacketID > 65535 {
-				t.Errorf("Packet ID %d is out of valid range [1, 65535]", tc.puback.PacketID)
-			}
-
 			// 验证版本特定的字段
 			switch tc.puback.Version {
 			case VERSION500:

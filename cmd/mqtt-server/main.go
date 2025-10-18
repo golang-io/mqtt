@@ -60,6 +60,12 @@ func main() {
 		}
 		return mqtt.Httpd()
 	})
+	// group.Go(func() error {
+	// 	for _, url := range mqtt.CONFIG.Federated {
+	// 		return mqtt.Fedstart(ctx, url, "")
+	// 	}
+	// 	return nil
+	// })
 	err = group.Wait()
 	log.Fatal(err)
 

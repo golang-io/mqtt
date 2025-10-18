@@ -149,7 +149,7 @@ type Server struct {
 	onShutdown    []func()
 	listenerGroup sync.WaitGroup
 
-	memorySubscribed *MemorySubscribed // 订阅列表
+	memorySubscribed SubscriptionManager // 订阅列表（使用接口以支持不同实现）
 }
 
 func NewServer(ctx context.Context) *Server {
@@ -157,7 +157,14 @@ func NewServer(ctx context.Context) *Server {
 		activeConn: make(map[*conn]struct{}),
 		listeners:  make(map[*net.Listener]struct{}),
 	}
-	s.memorySubscribed = NewMemorySubscribed(s)
+
+	// 初始化高性能订阅管理器
+	s.memorySubscribed = NewMemorySubscribed(s, SubscribedConfig{
+		EnableCache:      true,
+		MaxCacheSize:     10000,
+		StatsInterval:    1 * time.Minute,
+		EnableMonitoring: true,
+	})
 
 	go func() {
 		<-ctx.Done()

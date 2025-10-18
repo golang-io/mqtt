@@ -265,6 +265,9 @@ func (c *Client) Connect(ctx context.Context) error {
 }
 
 func (c *Client) Subscribe(ctx context.Context) error {
+	if len(c.options.Subscriptions) == 0 {
+		return nil
+	}
 	// 记录订阅尝试日志
 	var topics []string
 	for _, sub := range c.options.Subscriptions {

@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,7 +26,8 @@ type SubscriptionManager interface {
 	UnsubscribeTopics(c *conn, topics []string)
 
 	// Publish 发布消息
-	Publish(message *packet.Message, props *packet.PublishProperties) error
+	// sourceConn: 消息来源的连接，nil 表示服务端自己发布的消息
+	Publish(message *packet.Message, props *packet.PublishProperties, sourceConn *conn) error
 
 	// Print 打印订阅信息（调试用）
 	Print()
@@ -306,7 +308,7 @@ func (m *MemorySubscribed) unsubscribeFilter(c *conn, filter string) {
 }
 
 // Publish 发布消息（核心优化方法）
-func (m *MemorySubscribed) Publish(message *packet.Message, props *packet.PublishProperties) error {
+func (m *MemorySubscribed) Publish(message *packet.Message, props *packet.PublishProperties, sourceConn *conn) error {
 	startTime := time.Now()
 	defer func() {
 		elapsed := time.Since(startTime)
@@ -334,14 +336,20 @@ func (m *MemorySubscribed) Publish(message *packet.Message, props *packet.Publis
 			log.Printf("[MemSub] Cache miss: topic=%s, matched=%d filters", topic, len(matchedFilters))
 		}
 	}
-
-	if len(matchedFilters) == 0 {
-		return nil // 没有订阅者
+	if len(matchedFilters) == 0 && !strings.HasPrefix(sourceConn.ID, "MQTT-FEDERATE#") {
+		log.Printf("[MemSub] No subscribers found for topic: %s, forward to federated nodes: node_id=%d", topic, len(m.server.Federated))
+		for _, client := range m.server.Federated {
+			if err := client.SubmitMessage(message); err != nil {
+				log.Printf("[MemSub] Forward to federated node failed: node_id=%s, error=%v", client.options.ClientID, err)
+			}
+		}
+		return nil
 	}
 
 	// 步骤2: 收集所有订阅者（去重）
 	subscribers := m.collectSubscribers(matchedFilters)
 	if len(subscribers) == 0 {
+		log.Printf("[MemSub] No active subscribers for topic: %s (filters matched but no active connections)", topic)
 		return nil
 	}
 
@@ -456,4 +464,28 @@ func (m *MemorySubscribed) Print() {
 		fs.subscribersMu.RUnlock()
 		log.Printf("  Filter: %s, Subscribers: %d", filter, count)
 	}
+}
+
+// forwardToSingleBridgeClient 转发消息到单个桥接客户端
+// 参数:
+//   - bridgeConn: 桥接客户端连接
+//   - message: 要转发的消息
+//   - props: 消息属性
+//   - remoteNode: 远程节点名称（用于日志）
+//
+// 返回:
+//   - error: 转发失败的错误
+func (m *MemorySubscribed) forwardToSingleBridgeClient(
+	bridgeConn *conn,
+	message *packet.Message,
+	props *packet.PublishProperties,
+	remoteNode string,
+) error {
+	// 检查连接是否有效
+	if bridgeConn == nil {
+		return nil
+	}
+
+	// 使用 sendToConn 方法发送消息
+	return m.sendToConn(bridgeConn, message, props)
 }

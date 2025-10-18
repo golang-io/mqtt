@@ -13,6 +13,13 @@ type Listen struct {
 	KeyFile  string `yaml:"keyFile"`
 }
 
+type BridgeNode struct {
+	Name     string `json:"name"`     // 远程节点名称
+	Address  string `json:"address"`  // 远程节点地址 (如: localhost:1884)
+	Username string `json:"username"` // 用户名
+	Password string `json:"password"` // 密码
+}
+
 type config struct {
 	HTTP       Listen            `json:"HTTP"`
 	MQTT       Listen            `json:"MQTT"`
@@ -20,7 +27,11 @@ type config struct {
 	WebSocket  Listen            `json:"Websocket"`
 	WebSockets Listen            `json:"Websockets"`
 	Auth       map[string]string `json:"Auth"`
-	Federated  []string          `json:"Federated"`
+	Federated  []Options         `json:"Federated"`
+
+	// 桥接配置
+	Name        string       `json:"Name"`        // 本地节点名称
+	BridgeNodes []BridgeNode `json:"BridgeNodes"` // 桥接到的远程节点列表
 }
 
 func (c *config) GetAuth(username string) (string, bool) {

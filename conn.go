@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -93,6 +94,8 @@ func (c *conn) getState() (state ConnState, unixSec int64) {
 
 // Close the connection.
 func (c *conn) close() {
+	// 注销桥接客户端
+	// c.server.unregisterBridgeClient(c)
 	_ = c.rwc.Close()
 }
 
@@ -132,7 +135,7 @@ func (c *conn) serve(ctx context.Context) {
 		if c.willTopic == "" || c.willPayload == nil {
 			return
 		}
-		_ = c.server.memorySubscribed.Publish(&packet.Message{TopicName: c.willTopic, Content: c.willPayload}, nil)
+		_ = c.server.memorySubscribed.Publish(&packet.Message{TopicName: c.willTopic, Content: c.willPayload}, nil, c)
 	}()
 	// TODO: TLS handle
 	if tlsConn, ok := c.rwc.(*tls.Conn); ok {
@@ -208,19 +211,26 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 
 		// 这里没有回CONNACK的话，客户端会重试, 如果CONNACK里面的Code!=0, 客户端直接会字节报错
 		// TODO: password rewrite
-		password, ok := CONFIG.GetAuth(rpkt.Username)
-		if !ok || password != rpkt.Password {
-			if rpkt.Version == packet.VERSION500 {
-				connack.ReturnCode = packet.ErrMalformedUsernameOrPassword
-			} else {
-				connack.ReturnCode = packet.ErrBadUsernameOrPassword
+		if strings.HasPrefix(rpkt.Username, "federate-") {
+			// 联邦节点暂时不设置密码
+		} else {
+			password, ok := CONFIG.GetAuth(rpkt.Username)
+			if !ok || password != rpkt.Password {
+				if rpkt.Version == packet.VERSION500 {
+					connack.ReturnCode = packet.ErrMalformedUsernameOrPassword
+				} else {
+					connack.ReturnCode = packet.ErrBadUsernameOrPassword
+				}
 			}
 		}
+
 		c.ID, c.version, c.willTopic, c.willPayload = rpkt.ClientID, rpkt.Version, rpkt.WillTopic, rpkt.WillPayload
 		log.Printf("client will: willTopic=%s, willPayload=%s, reomte=%s, version=%d", c.willTopic, c.willPayload, c.remoteAddr, c.version)
 		// 记录客户端认证和连接成功日志
 		if connack.ReturnCode.Code == 0 {
 			log.Printf("client auth ok: clientId=%s, username=%s, reomte=%s", c.ID, rpkt.Username, c.remoteAddr)
+			// 如果认证成功，注册桥接客户端
+			// c.server.registerBridgeClient(c)
 		} else {
 			log.Printf("client auth failed: clientId=%s, username=%s, reomte=%s, reason=%v", c.ID, rpkt.Username, c.remoteAddr, connack.ReturnCode)
 		}
@@ -229,10 +239,10 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 	case *packet.PUBLISH:
 		switch rpkt.QoS {
 		case 0:
-			_ = c.server.memorySubscribed.Publish(rpkt.Message, rpkt.Props)
+			_ = c.server.memorySubscribed.Publish(rpkt.Message, rpkt.Props, c)
 			return
 		case 1:
-			_ = c.server.memorySubscribed.Publish(rpkt.Message, rpkt.Props)
+			_ = c.server.memorySubscribed.Publish(rpkt.Message, rpkt.Props, c)
 			spkt = &packet.PUBACK{FixedHeader: &packet.FixedHeader{Version: c.version, Kind: PUBACK}, PacketID: rpkt.PacketID}
 		case 2:
 			c.inFight.Put(rpkt)
@@ -247,7 +257,7 @@ func (defaultHandler) ServeMQTT(w ResponseWriter, req packet.Packet) {
 		if !ok {
 			panic("inFight not found packetID")
 		}
-		err := c.server.memorySubscribed.Publish(pub.Message, pub.Props)
+		err := c.server.memorySubscribed.Publish(pub.Message, pub.Props, c)
 		if err != nil {
 			log.Printf("publish err: err=%v", err)
 		}

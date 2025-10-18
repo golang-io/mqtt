@@ -49,7 +49,7 @@ func ServerLog(ctx context.Context, stat *requests.Stat) {
 	log.Printf("%s # body=%s, resp=%s", stat.Print(), stat.RequestBody(), stat.ResponseBody())
 }
 
-func Httpd() error {
+func Web(ctx context.Context) error {
 	stat.Register()
 	stat.RefreshUptime()
 	mux := requests.NewServeMux(requests.URL(CONFIG.HTTP.URL), requests.Logf(ServerLog))
@@ -60,7 +60,7 @@ func Httpd() error {
 	mux.GET("/", http.FileServer(http.Dir("web")))
 
 	mux.Pprof()
-	s := requests.NewServer(context.Background(), mux, requests.OnStart(func(s *http.Server) {
+	s := requests.NewServer(ctx, mux, requests.OnStart(func(s *http.Server) {
 		log.Printf("http serve: %s", s.Addr)
 	}))
 	return s.ListenAndServe()

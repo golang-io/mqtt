@@ -31,4 +31,4 @@ cert/
 config/
 mqtt-server
 mqtt-server.tar.gz
-
+coverage.txt

@@ -49,7 +49,7 @@ func TestBasicFunctionality(t *testing.T) {
 		Content:   []byte("25.5°C"),
 	}
 
-	err := v2.Publish(message, nil)
+	err := v2.Publish(message, nil, nil)
 	if err != nil {
 		t.Fatalf("Publish failed: %v", err)
 	}
@@ -78,10 +78,10 @@ func TestCacheEfficiency(t *testing.T) {
 		TopicName: "sensor/temp",
 		Content:   []byte("data"),
 	}
-	v2.Publish(message, nil)
+	v2.Publish(message, nil, nil)
 
 	// 第二次发布相同topic（缓存命中）
-	v2.Publish(message, nil)
+	v2.Publish(message, nil, nil)
 
 	stats := v2.GetStats()
 
@@ -136,7 +136,7 @@ func testLargeScale(t *testing.T, v2 *MemorySubscribed, server *Server, connCoun
 			TopicName: fmt.Sprintf("sensor/temp%d", i),
 			Content:   []byte("data"),
 		}
-		v2.Publish(message, nil)
+		v2.Publish(message, nil, nil)
 	}
 	publishTime := time.Since(publishStart)
 
@@ -183,7 +183,7 @@ func TestConcurrentAccess(t *testing.T) {
 				TopicName: fmt.Sprintf("test/%d", id),
 				Content:   []byte("data"),
 			}
-			v2.Publish(message, nil)
+			v2.Publish(message, nil, nil)
 		}(i)
 	}
 
@@ -218,7 +218,7 @@ func BenchmarkV2Publish(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			v2.Publish(message, nil)
+			v2.Publish(message, nil, nil)
 		}
 	})
 
@@ -248,7 +248,7 @@ func BenchmarkV2PublishNewTopic(b *testing.B) {
 			TopicName: fmt.Sprintf("sensor/temp%d", i),
 			Content:   []byte("data"),
 		}
-		v2.Publish(message, nil)
+		v2.Publish(message, nil, nil)
 	}
 }
 
@@ -266,7 +266,7 @@ func BenchmarkV2Subscribe(b *testing.B) {
 			TopicName: fmt.Sprintf("sensor/temp%d", i),
 			Content:   []byte("data"),
 		}
-		v2.Publish(message, nil)
+		v2.Publish(message, nil, nil)
 	}
 
 	b.ResetTimer()

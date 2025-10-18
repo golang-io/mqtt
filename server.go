@@ -17,6 +17,7 @@ import (
 	"github.com/golang-io/mqtt/packet"
 	"github.com/golang-io/mqtt/topic"
 	"golang.org/x/net/websocket"
+	"golang.org/x/sync/errgroup"
 )
 
 // shutdownPollIntervalMax is the max polling interval when checking
@@ -150,12 +151,15 @@ type Server struct {
 	listenerGroup sync.WaitGroup
 
 	memorySubscribed SubscriptionManager // 订阅列表（使用接口以支持不同实现）
+
+	Federated map[string]*Client
 }
 
 func NewServer(ctx context.Context) *Server {
 	s := &Server{
 		activeConn: make(map[*conn]struct{}),
 		listeners:  make(map[*net.Listener]struct{}),
+		Federated:  make(map[string]*Client),
 	}
 
 	// 初始化高性能订阅管理器
@@ -165,19 +169,80 @@ func NewServer(ctx context.Context) *Server {
 		StatsInterval:    1 * time.Minute,
 		EnableMonitoring: true,
 	})
-
-	go func() {
-		<-ctx.Done()
-		if err := s.Shutdown(ctx); err != nil {
-			panic(err)
-		}
-	}()
 	return s
+}
+
+func (s *Server) InitServer(ctx context.Context) error {
+	group, ctx := errgroup.WithContext(ctx)
+
+	group.Go(func() error {
+		if CONFIG.MQTT.URL == "" {
+			return nil
+		}
+		return s.ListenAndServe(URL(CONFIG.MQTT.URL))
+	})
+
+	// ca文件: ca.pem, 客户端证书: mqtt.pem, 客户端key文件: mqtt.key
+	group.Go(func() error {
+		if CONFIG.MQTTs.URL == "" {
+			return nil
+		}
+		return s.ListenAndServeTLS(CONFIG.MQTTs.CertFile, CONFIG.MQTTs.KeyFile, URL(CONFIG.MQTTs.URL))
+	})
+	group.Go(func() error {
+		if CONFIG.WebSocket.URL == "" {
+			return nil
+		}
+		return s.ListenAndServeWebsocket(URL(CONFIG.WebSocket.URL))
+	})
+	group.Go(func() error {
+		if CONFIG.WebSockets.URL == "" {
+			return nil
+		}
+		return s.ListenAndServeWebsocketTLS(CONFIG.WebSockets.CertFile, CONFIG.WebSockets.KeyFile, URL(CONFIG.WebSockets.URL))
+	})
+	group.Go(func() error {
+		if CONFIG.HTTP.URL == "" {
+			return nil
+		}
+		return Web(ctx)
+	})
+
+	group.Go(func() error {
+		// 检查配置中是否有桥接节点
+		if len(CONFIG.Federated) == 0 {
+			log.Printf("[Federated] No federated configuration found, running in standalone mode")
+			return nil
+		}
+		log.Printf("[Federated] Initializing federated for node: %s", CONFIG.Name)
+		log.Printf("[Federated] Found %d federated nodes in configuration", len(CONFIG.Federated))
+
+		for _, node := range CONFIG.Federated {
+			s.Federated[node.ClientID] = New(URL(node.URL), ClientID("MQTT-FEDERATE#"+node.ClientID), Version("5.0.0"))
+			group.Go(func() error {
+				return s.Federated[node.ClientID].ConnectAndSubscribe(ctx)
+			})
+		}
+		return nil
+	})
+
+	group.Go(func() error {
+		<-ctx.Done()
+		return s.Shutdown(ctx)
+	})
+
+	return group.Wait()
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	log.Printf("mqtt server shutting down...")
 	s.inShutdown.Store(true)
+
+	// 停止桥接管理器
+	// if s.bridgeManager != nil {
+	// 	s.bridgeManager.Stop()
+	// }
+
 	s.mu.Lock()
 	lnerr := s.closeListenersLocked()
 	for _, f := range s.onShutdown {
